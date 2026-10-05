@@ -11,23 +11,15 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.maps.MapGroupLayer;
-import com.badlogic.gdx.maps.MapLayer;
-import com.badlogic.gdx.maps.MapLayers;
-import com.badlogic.gdx.maps.MapObject;
-import com.badlogic.gdx.maps.objects.PolygonMapObject;
-import com.badlogic.gdx.maps.objects.RectangleMapObject;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TmxMapLoader;
 import com.badlogic.gdx.maps.tiled.renderers.OrthogonalTiledMapRenderer;
-import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Polygon;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Shape2D;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
-import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
@@ -97,13 +89,9 @@ public class GameScreen implements Screen {
     // Shared input for all players (keyboard + up to 4 controllers); owned by TumbalataGame
     private InputManager inputs;
 
-    private final Array<Shape2D> playerWalls = new Array<>();
-    private final Array<Shape2D> canWalls = new Array<>();
-    private final Array<Shape2D> canBlockers = new Array<>();
-
-    private final Rectangle hitboxRect = new Rectangle();
-    private final float[] hitboxVerts = new float[8];
-    private final Polygon hitboxPoly = new Polygon(new float[8]);
+    private MapCollision playerWalls;
+    private MapCollision canWalls;
+    private MapCollision canBlockers;
 
     private final Vector2 prevThrowerPos = new Vector2();
     private final Vector2 prevTayaPos = new Vector2();
@@ -191,11 +179,9 @@ public class GameScreen implements Screen {
         map = new TmxMapLoader().load(MAP_FILE);
         mapRenderer = new OrthogonalTiledMapRenderer(map, 1f, spriteBatch);
 
-        loadCollisionLayer(PLAYER_COLLISION_LAYER, playerWalls);
-        loadCollisionLayer(CAN_COLLISION_LAYER, canWalls);
-
-        canBlockers.addAll(canWalls);
-        if (CAN_BLOCKED_BY_PLAYER_WALLS) canBlockers.addAll(playerWalls);
+        playerWalls = MapCollision.fromLayer(map, PLAYER_COLLISION_LAYER);
+        canWalls = MapCollision.fromLayer(map, CAN_COLLISION_LAYER);
+        canBlockers = CAN_BLOCKED_BY_PLAYER_WALLS ? MapCollision.combine(canWalls, playerWalls) : canWalls;
 
         upperRingTexture = new Texture(Gdx.files.internal(UPPER_RING_FILE));
         upperRingTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
@@ -237,152 +223,13 @@ public class GameScreen implements Screen {
         thrower.tint.set(Characters.TINTS[characterIndex]);
     }
 
-    private void loadCollisionLayer(String layerName, Array<Shape2D> out) {
-        collectCollision(map.getLayers(), layerName, false, out);
-    }
-
-    private void collectCollision(MapLayers layers, String layerName, boolean insideMatch, Array<Shape2D> out) {
-        for (MapLayer layer : layers) {
-            boolean matches = insideMatch || layerName.equalsIgnoreCase(layer.getName());
-            if (layer instanceof MapGroupLayer) {
-                collectCollision(((MapGroupLayer) layer).getLayers(), layerName, matches, out);
-            } else if (matches) {
-                for (MapObject obj : layer.getObjects()) {
-                    addCollisionObject(layerName, obj, out);
-                }
-            }
-        }
-    }
-
-    private void addCollisionObject(String layerName, MapObject obj, Array<Shape2D> out) {
-        if (obj instanceof RectangleMapObject) {
-            Rectangle r = ((RectangleMapObject) obj).getRectangle();
-            float rotation = obj.getProperties().get("rotation", 0f, Float.class);
-            if (Math.abs(rotation) < 0.01f) {
-                out.add(r);
-            } else {
-                float px = r.x, py = r.y + r.height;
-                float rad = -rotation * MathUtils.degreesToRadians;
-                float cos = MathUtils.cos(rad), sin = MathUtils.sin(rad);
-                float[] local = { 0, -r.height, r.width, -r.height, r.width, 0, 0, 0 };
-                float[] v = new float[8];
-                for (int i = 0; i < 4; i++) {
-                    float lx = local[i * 2], ly = local[i * 2 + 1];
-                    v[i * 2] = px + lx * cos - ly * sin;
-                    v[i * 2 + 1] = py + lx * sin + ly * cos;
-                }
-                out.add(new Polygon(v));
-            }
-        } else if (obj instanceof PolygonMapObject) {
-            out.add(((PolygonMapObject) obj).getPolygon());
-        }
-    }
-
-    private boolean isBlocked(Array<Shape2D> walls, float cx, float cy, float w, float h) {
-        float left = cx - w / 2f;
-        float bottom = cy - h / 2f;
-        float right = left + w;
-        float top = bottom + h;
-
-        hitboxRect.set(left, bottom, w, h);
-        boolean polyBuilt = false;
-
-        for (int i = 0; i < walls.size; i++) {
-            Shape2D wall = walls.get(i);
-            if (wall instanceof Rectangle) {
-                if (((Rectangle) wall).overlaps(hitboxRect)) return true;
-            } else if (wall instanceof Polygon) {
-                if (!polyBuilt) {
-                    hitboxVerts[0] = left;  hitboxVerts[1] = bottom;
-                    hitboxVerts[2] = right; hitboxVerts[3] = bottom;
-                    hitboxVerts[4] = right; hitboxVerts[5] = top;
-                    hitboxPoly.setVertices(hitboxVerts);
-                    polyBuilt = true;
-                }
-                if (Intersector.overlapConvexPolygons(hitboxPoly, (Polygon) wall)) return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isPlayerBlocked(float x, float y) {
-        return isBlocked(playerWalls, x, y + PLAYER_HITBOX_OFFSET_Y, PLAYER_HITBOX_W, PLAYER_HITBOX_H);
-    }
-
     private void savePreviousPositions() {
         prevThrowerPos.set(thrower.position);
         prevTayaPos.set(taya.position);
     }
 
     private void resolvePlayerCollision(Player p, Vector2 prev) {
-        float nx = p.position.x;
-        float ny = p.position.y;
-
-        if (!isPlayerBlocked(nx, ny)) return;
-        if (isPlayerBlocked(prev.x, prev.y)) return;
-
-        if (!isPlayerBlocked(nx, prev.y)) {
-            p.position.set(nx, prev.y);
-        } else if (!isPlayerBlocked(prev.x, ny)) {
-            p.position.set(prev.x, ny);
-        } else {
-            p.position.set(prev.x, prev.y);
-        }
-    }
-
-    private void sweepAgainstWalls(Vector2 pos, Vector2 vel, float oldX, float oldY, Array<Shape2D> walls,
-                                   float w, float h, float offX, float offY, float bounce) {
-        float nx = pos.x, ny = pos.y;
-        if (nx == oldX && ny == oldY) return;
-
-        float startX = oldX, startY = oldY;
-        if (isBlocked(walls, startX + offX, startY + offY, w, h)) {
-            boolean found = false;
-            for (float r = 1f; r <= 24f && !found; r += 1f) {
-                for (int i = 0; i < 16; i++) {
-                    float a = i * MathUtils.PI2 / 16f;
-                    float cx = oldX + MathUtils.cos(a) * r;
-                    float cy = oldY + MathUtils.sin(a) * r;
-                    if (!isBlocked(walls, cx + offX, cy + offY, w, h)) {
-                        startX = cx;
-                        startY = cy;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if (!found) return;
-        }
-
-        float dx = nx - startX, dy = ny - startY;
-        float dist = (float) Math.sqrt(dx * dx + dy * dy);
-        if (dist == 0f) {
-            pos.set(startX, startY);
-            return;
-        }
-
-        int steps = Math.max(1, MathUtils.ceil(dist / 4f));
-        float lastX = startX, lastY = startY;
-        for (int i = 1; i <= steps; i++) {
-            float t = i / (float) steps;
-            float cx = startX + dx * t;
-            float cy = startY + dy * t;
-            if (isBlocked(walls, cx + offX, cy + offY, w, h)) {
-                boolean xBlocked = isBlocked(walls, cx + offX, lastY + offY, w, h);
-                boolean yBlocked = isBlocked(walls, lastX + offX, cy + offY, w, h);
-                if (!xBlocked && !yBlocked) {
-                    xBlocked = true;
-                    yBlocked = true;
-                }
-                pos.set(lastX, lastY);
-                if (xBlocked) vel.x = -vel.x * bounce;
-                if (yBlocked) vel.y = -vel.y * bounce;
-                return;
-            }
-            lastX = cx;
-            lastY = cy;
-        }
-        pos.set(nx, ny);
+        playerWalls.slide(p.position, prev.x, prev.y, PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
     }
 
     private void updateCan(float delta) {
@@ -393,7 +240,7 @@ public class GameScreen implements Screen {
 
         if (taya.hasCan || can.zPosition > CAN_WALL_MAX_HEIGHT) return;
 
-        sweepAgainstWalls(can.position, can.velocity, oldX, oldY, canBlockers,
+        canBlockers.sweep(can.position, can.velocity, oldX, oldY,
             CAN_HITBOX_W, CAN_HITBOX_H, CAN_HITBOX_OFFSET_X, CAN_HITBOX_OFFSET_Y, CAN_WALL_BOUNCE);
     }
 
@@ -403,7 +250,7 @@ public class GameScreen implements Screen {
 
         slipper.update(delta, OUTER_MIN_X, OUTER_MIN_Y, OUTER_MAX_X, OUTER_MAX_Y);
 
-        sweepAgainstWalls(slipper.position, slipper.velocity, oldX, oldY, playerWalls,
+        playerWalls.sweep(slipper.position, slipper.velocity, oldX, oldY,
             SLIPPER_HITBOX_W, SLIPPER_HITBOX_H, 0f, 0f, SLIPPER_WALL_BOUNCE);
     }
 
@@ -824,11 +671,11 @@ public class GameScreen implements Screen {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         if (showPlayerWalls) {
             shapeRenderer.setColor(1f, 0f, 0f, 0.35f);
-            for (Shape2D wall : playerWalls) fillDebugShape(wall);
+            for (Shape2D wall : playerWalls.shapes()) fillDebugShape(wall);
         }
         if (showCanWalls) {
             shapeRenderer.setColor(1f, 1f, 0f, 0.35f);
-            for (Shape2D wall : canWalls) fillDebugShape(wall);
+            for (Shape2D wall : canWalls.shapes()) fillDebugShape(wall);
         }
         shapeRenderer.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
@@ -844,11 +691,11 @@ public class GameScreen implements Screen {
 
         if (showPlayerWalls) {
             shapeRenderer.setColor(Color.RED);
-            for (Shape2D wall : playerWalls) drawDebugShape(wall);
+            for (Shape2D wall : playerWalls.shapes()) drawDebugShape(wall);
         }
         if (showCanWalls) {
             shapeRenderer.setColor(Color.YELLOW);
-            for (Shape2D wall : canWalls) drawDebugShape(wall);
+            for (Shape2D wall : canWalls.shapes()) drawDebugShape(wall);
         }
 
         shapeRenderer.setColor(Color.CYAN);

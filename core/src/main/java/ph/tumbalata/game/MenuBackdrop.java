@@ -7,21 +7,11 @@ import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.maps.MapGroupLayer;
-import com.badlogic.gdx.maps.MapLayer;
-import com.badlogic.gdx.maps.MapLayers;
-import com.badlogic.gdx.maps.MapObject;
-import com.badlogic.gdx.maps.objects.PolygonMapObject;
-import com.badlogic.gdx.maps.objects.RectangleMapObject;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TmxMapLoader;
 import com.badlogic.gdx.maps.tiled.renderers.OrthogonalTiledMapRenderer;
-import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.MathUtils;
-import com.badlogic.gdx.math.Polygon;
-import com.badlogic.gdx.math.Rectangle;
-import com.badlogic.gdx.math.Shape2D;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 
@@ -75,12 +65,8 @@ public class MenuBackdrop {
     private final Texture walkSheet;
     private final Texture ringTexture; // may be null
 
-    private final Array<Shape2D> walls = new Array<>();
+    private final MapCollision walls;
     private final Array<Walker> walkers = new Array<>();
-
-    private final Rectangle hitboxRect = new Rectangle();
-    private final float[] hitboxVerts = new float[8];
-    private final Polygon hitboxPoly = new Polygon(new float[8]);
 
     /** Returns null (and logs) if the live background can't be built, so the menu can use a normal image instead. */
     public static MenuBackdrop tryCreate() {
@@ -115,7 +101,7 @@ public class MenuBackdrop {
             ringTexture = null;
         }
 
-        collectWalls(map.getLayers(), false);
+        walls = MapCollision.fromLayer(map, COLLISION_LAYER);
         for (int i = 0; i < Characters.COUNT; i++) {
             walkers.add(new Walker(Characters.TINTS[i]));
         }
@@ -188,52 +174,11 @@ public class MenuBackdrop {
     }
 
     // ------------------------------------------------------------------
-    // Collision (same idea as GameScreen: rectangles and polygons from the TMX collision layer)
+    // Collision: the same collision1 walls the game uses
     // ------------------------------------------------------------------
 
-    private void collectWalls(MapLayers layers, boolean insideMatch) {
-        for (MapLayer layer : layers) {
-            boolean matches = insideMatch || COLLISION_LAYER.equalsIgnoreCase(layer.getName());
-            if (layer instanceof MapGroupLayer) {
-                collectWalls(((MapGroupLayer) layer).getLayers(), matches);
-            } else if (matches) {
-                for (MapObject obj : layer.getObjects()) {
-                    if (obj instanceof RectangleMapObject) {
-                        walls.add(((RectangleMapObject) obj).getRectangle());
-                    } else if (obj instanceof PolygonMapObject) {
-                        walls.add(((PolygonMapObject) obj).getPolygon());
-                    }
-                }
-            }
-        }
-    }
-
     private boolean isBlocked(float cx, float cy) {
-        float left = cx - HITBOX_W / 2f;
-        float bottom = cy - HITBOX_H / 2f;
-        float right = left + HITBOX_W;
-        float top = bottom + HITBOX_H;
-
-        hitboxRect.set(left, bottom, HITBOX_W, HITBOX_H);
-        boolean polyBuilt = false;
-
-        for (int i = 0; i < walls.size; i++) {
-            Shape2D wall = walls.get(i);
-            if (wall instanceof Rectangle) {
-                if (((Rectangle) wall).overlaps(hitboxRect)) return true;
-            } else if (wall instanceof Polygon) {
-                if (!polyBuilt) {
-                    hitboxVerts[0] = left;  hitboxVerts[1] = bottom;
-                    hitboxVerts[2] = right; hitboxVerts[3] = bottom;
-                    hitboxVerts[4] = right; hitboxVerts[5] = top;
-                    hitboxVerts[6] = left;  hitboxVerts[7] = top;
-                    hitboxPoly.setVertices(hitboxVerts);
-                    polyBuilt = true;
-                }
-                if (Intersector.overlapConvexPolygons(hitboxPoly, (Polygon) wall)) return true;
-            }
-        }
-        return false;
+        return walls.isBlocked(cx, cy, HITBOX_W, HITBOX_H);
     }
 
     // ------------------------------------------------------------------

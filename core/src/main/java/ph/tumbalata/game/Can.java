@@ -31,9 +31,14 @@ public class Can {
     private float rotationAngle = 0f;
     private TextureRegion frontFrame;
 
-    public Can(float x, float y, Texture canSpriteSheet, int frameCols, int frameRows, float frameDuration) {
+    /** Physics only, no sprite: for unit tests. Do not render a can made this way. */
+    Can(float x, float y) {
         this.position = new Vector2(x, y);
         this.velocity = new Vector2(0, 0);
+    }
+
+    public Can(float x, float y, Texture canSpriteSheet, int frameCols, int frameRows, float frameDuration) {
+        this(x, y);
 
         TextureRegion[][] tmp = TextureRegion.split(
             canSpriteSheet, 
