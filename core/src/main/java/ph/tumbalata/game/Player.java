@@ -31,6 +31,11 @@ public class Player {
     public boolean hasCan = false;
     public boolean hasSlipper = false;
 
+    /** This player's own slipper (every Thrower throws their own). */
+    public Slipper slipper;
+    /** True once this player has thrown their slipper this round. */
+    public boolean hasThrown = false;
+
     /** This player's input (keyboard and/or controller, merged). It stays with the player when roles swap. */
     public final PlayerInput input;
 

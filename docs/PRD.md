@@ -21,20 +21,23 @@ The goal of this document is to let anyone pick the project up without the origi
 
 ## Game concept and rules
 
-The Thrower tries to knock down a can with a slipper (the pambato); Taya guards the can. A match ends on a timer and the highest score wins.
+Throwers try to knock down a can with their slippers (the pambato); one Taya guards the can. 2 to 4 players: one is Taya, everyone else is a Thrower. A match ends on a timer and the highest score wins.
 
 **Roles**
 
-- **Thrower.** Stays behind the throw line while roaming. Picks up the slipper, aims, sets power and throws it at the can. After the throw, the Thrower must get the slipper back and return behind the line.
-- **Taya (the guard, "it").** Roams the arena and guards the can on its base marker. When the can is hit, Taya picks it up, carries it back to the base and stands it upright.
+- **Thrower.** Each Thrower has their own slipper (tinted in their player colour). A Thrower who has not thrown yet must stay behind the throw line. After throwing, they may roam the whole map.
+- **Taya (the guard, "it").** Roams the arena and guards the can on its base marker. Taya may only pick up the can when it has been knocked over, or to toss it when every Thrower missed.
 
 **Round flow and role swaps**
 
-1. Thrower throws. If the slipper lands within 25 px of the can, the can is knocked down and both players scramble: Taya returns the can to its base while the Thrower fetches the slipper.
-2. If the slipper misses, Taya picks up the can, aims, sets power and throws it at the slipper on the ground. A can that lands within 30 px of the slipper swaps the roles.
-3. A can that misses the slipper starts the retrieval phase: Taya puts the can back on its base while the Thrower tries to get home with the slipper.
-4. Taya can tag the Thrower only when the can stands upright on its base (within 10 px) and the Thrower is past the throw line. A tag is within 30 px and swaps the roles.
-5. The round resets when the Thrower is back behind the throw line holding the slipper.
+1. Every round starts with all Throwers behind the line holding their slipper. They throw one at a time in turn order (P1, P2, P3; the first thrower rotates each round).
+2. While nobody has hit the can, slippers stay where they land: Throwers who missed may roam but cannot pick up their slipper, and nobody can be tagged.
+3. **Hit:** a slipper that passes within 25 px of the standing can knocks it down and starts the scramble. Throwers who already threw fetch their own slipper; Throwers who have not thrown yet may still throw (and knock the can down again once Taya stands it back up). Taya picks up the can and puts it back on its base.
+4. **Everyone missed:** once all slippers have stopped, Taya picks up the can, aims, sets power and tosses it at the slippers. A can that lands within 30 px of a slipper makes that slipper's owner the new Taya.
+5. **Toss missed:** the scramble starts: Throwers may now pick up their slippers and run home while Taya fetches the can and puts it back on its base.
+6. **Tag:** during the scramble, once the can stands upright on its base (within 10 px), Taya can tag any Thrower past the throw line (within 30 px). Behind the line is safe. The tagged Thrower becomes Taya.
+7. After a swap, the old Taya becomes a Thrower and throws first in the new round.
+8. The round ends when every Thrower is back behind the line holding their own slipper; the next round starts with the same Taya.
 
 **Interaction distances (current values)**
 
