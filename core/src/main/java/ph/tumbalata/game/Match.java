@@ -109,6 +109,8 @@ public class Match {
 
     private static final Events NO_EVENTS = new Events() {};
 
+    // Loop over players by index, never with for-each: libGDX Array iterators cannot be nested, and event handlers
+    // (GameScreen) query the match, which loops over the players, while the match is in the middle of a loop.
     private final Array<Player> players;
     private final Roster roster;
     private final Can can;
@@ -178,7 +180,10 @@ public class Match {
     /** One score per player, index = player id. */
     public int[] scores() {
         int[] s = new int[players.size];
-        for (Player p : players) s[p.id] = p.score;
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            s[p.id] = p.score;
+        }
         return s;
     }
 
@@ -225,7 +230,8 @@ public class Match {
     }
 
     private boolean allSlippersStopped() {
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (isSlipperOut(p) && p.slipper.velocity.len() > 0) return false;
         }
         return true;
@@ -234,7 +240,8 @@ public class Match {
     /** The round is over when every Thrower is back behind the line holding their own slipper. */
     private boolean everyoneHome() {
         if (aim != Aim.NONE) return false;
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (p == taya) continue;
             if (!p.hasSlipper || p.position.x >= THROW_LINE_X) return false;
         }
@@ -254,14 +261,18 @@ public class Match {
             return;
         }
 
-        for (Player p : players) p.prevPosition.set(p.position);
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            p.prevPosition.set(p.position);
+        }
         handleInput(delta);
         step(delta);
     }
 
     private void handleInput(float delta) {
         // --- Movement: everyone, except a Thrower who is aiming and Taya holding the can for the toss ---
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (isFrozen(p)) {
                 p.stop();
                 continue;
@@ -270,7 +281,8 @@ public class Match {
         }
 
         // --- B: Throwers pick up their own slipper ---
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (p.input.bPressed && canPickUpSlipper(p)) p.hasSlipper = true;
         }
 
@@ -311,7 +323,8 @@ public class Match {
         }
 
         // Reset round: Select (any player's pad) or R
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (p.input.selectPressed) {
                 resetRound(false);
                 break;
@@ -335,7 +348,8 @@ public class Match {
     }
 
     private void step(float delta) {
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             p.update(delta);
             playerWalls.slide(p.position, p.prevPosition.x, p.prevPosition.y,
                 PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
@@ -358,7 +372,8 @@ public class Match {
         updateCan(delta);
 
         // Slippers on the ground or in flight; a moving slipper knocks over a standing can
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (!isSlipperOut(p)) continue;
             boolean moving = p.slipper.velocity.len() > 0;
             updateSlipper(p.slipper, delta);
@@ -392,7 +407,8 @@ public class Match {
                 }
 
                 if (can.zPosition <= 0 && can.zVelocity <= 0) {
-                    for (Player p : players) {
+                    for (int pi = 0; pi < players.size; pi++) {
+                        Player p = players.get(pi);
                         if (!isSlipperOut(p)) continue;
                         if (can.position.dst(p.slipper.position) < CAN_HITS_SLIPPER_DISTANCE) {
                             triggerTayaCanHitSlipper(p);
@@ -452,7 +468,8 @@ public class Match {
 
     /** True if any Thrower is past the throw line right now. */
     public boolean isAnyThrowerPastLine() {
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (p != taya && p.position.x > THROW_LINE_X) return true;
         }
         return false;
@@ -467,7 +484,8 @@ public class Match {
     private void checkTagging() {
         if (!isCanStandingOnBase()) return;
 
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (!isTaggable(p)) continue;
             if (taya.position.dst(p.position) < TAG_DISTANCE) {
                 award(taya, Scoring.TAG);
@@ -479,7 +497,8 @@ public class Match {
     }
 
     private void endRoundNormally() {
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             if (p != taya && p.hasThrown) award(p, Scoring.HOME_SAFE);
         }
         events.roundEnded();
@@ -614,7 +633,8 @@ public class Match {
     /** Points the taya shortcut at the roster's Taya and gives every player their role's speed. */
     private void applyRoles() {
         taya = players.get(roster.taya());
-        for (Player p : players) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
             p.speed = roster.isTaya(p.id) ? GameConstants.TAYA_SPEED : GameConstants.PLAYER_SPEED;
         }
     }

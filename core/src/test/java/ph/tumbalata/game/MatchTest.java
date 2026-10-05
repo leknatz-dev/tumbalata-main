@@ -387,6 +387,42 @@ class MatchTest {
         assertEquals("turn missed ", log.toString());
     }
 
+    /**
+     * Regression: GameScreen's handlers query the match (which loops over the players) while the match itself is in
+     * the middle of a loop over the players. libGDX Array iterators cannot be nested, so that crashed on a can hit.
+     */
+    @Test
+    void eventHandlersMayQueryTheMatchWhileItIsUpdating() {
+        newMatch(3);
+        int[] queries = new int[1];
+        match.setEvents(new Match.Events() {
+            // Exactly what GameScreen does on a can hit (one loop over the players)
+            @Override public void canKnocked(Player thrower) {
+                match.isAnyThrowerPastLine();
+                queries[0]++;
+            }
+            @Override public void scored(Player player, int points) {
+                match.scores();
+                queries[0]++;
+            }
+        });
+        throwRight(p(0), 90f);
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
+        stepFor(1f);
+        assertEquals(2, queries[0]);
+    }
+
+    @Test
+    void anEventHandlerLoopingOverPlayersDoesNotCrashTheMatch() {
+        newMatch(3);
+        match.setEvents(new Match.Events() {
+            @Override public void canKnocked(Player thrower) { match.isAnyThrowerPastLine(); }
+        });
+        throwRight(p(0), 90f);
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
+        stepFor(0.5f);
+    }
+
     @Test
     void anyThrowerPastLineDecidesRunOrHaha() {
         newMatch(2);
