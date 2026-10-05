@@ -18,7 +18,6 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Polygon;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Shape2D;
-import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ScreenUtils;
@@ -27,11 +26,11 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 
 import java.util.Comparator;
 
+/**
+ * Draws a match. All the rules (roles, round flow, tagging, scoring, timer) live in {@link Match};
+ * this screen loads the assets, feeds the match one frame at a time and draws what it reports.
+ */
 public class GameScreen implements Screen {
-    public static final float WORLD_WIDTH = 1280f;
-    public static final float WORLD_HEIGHT = 704f;
-
-
     private static final float VIEW_X = 0f;
     private static final float VIEW_Y = -64f;
     private static final float VIEW_W = 1408f;
@@ -43,35 +42,21 @@ public class GameScreen implements Screen {
     private static final String PLAYER_COLLISION_LAYER = "collision1";
     private static final String CAN_COLLISION_LAYER = "collision2";
     private static final String UPPER_RING_FILE = "upperring.png";
+    private static final boolean CAN_BLOCKED_BY_PLAYER_WALLS = true;
 
     private static final float RING_X = 0f;
     private static final float RING_Y = -64f;
 
-    private static final float PLAYER_HITBOX_W = 14f;
-    private static final float PLAYER_HITBOX_H = 10f;
-    private static final float PLAYER_HITBOX_OFFSET_Y = 0f;
+    private static final float NAME_TAG_Y = 34f;
 
-    private static final float CAN_MIN_THROW_DISTANCE = 40f;
-    private static final float CAN_MAX_THROW_DISTANCE = 500f;
-    private static final float CAN_POWER_CURVE = 1.5f;
+    // --- MATCH ---
+    private static final float MATCH_TIME_SECONDS = 40f;
+    private static final int VICTORY_WINDOW_W = 700;
+    private static final int VICTORY_WINDOW_H = 500;
 
-    private static final float CAN_RELEASE_HEIGHT = 30f;
-    private static final float CAN_HITBOX_W = 16f;
-    private static final float CAN_HITBOX_H = 16f;
-    private static final float CAN_HITBOX_OFFSET_X = 0f;
-    private static final float CAN_HITBOX_OFFSET_Y = 0f;
-    private static final float CAN_WALL_BOUNCE = 0.5f;
-    private static final boolean CAN_BLOCKED_BY_PLAYER_WALLS = true;
-    private static final float CAN_WALL_MAX_HEIGHT = 10000f;
-
-    private static final float SLIPPER_HITBOX_W = 12f;
-    private static final float SLIPPER_HITBOX_H = 12f;
-    private static final float SLIPPER_WALL_BOUNCE = 0.6f;
-
-    private static final float OUTER_MIN_X = VIEW_X - 256f;
-    private static final float OUTER_MIN_Y = VIEW_Y - 256f;
-    private static final float OUTER_MAX_X = VIEW_X + VIEW_W + 256f;
-    private static final float OUTER_MAX_Y = VIEW_Y + VIEW_H;
+    // --- SCORE POP-UPS ("+3" floating up from a player) ---
+    private static final float POPUP_TIME = 1.0f;
+    private static final float POPUP_RISE = 40f;
 
     private Viewport viewport;
     private OrthographicCamera camera;
@@ -89,75 +74,25 @@ public class GameScreen implements Screen {
     private Texture playerCanSheet;
     private Texture canSheet;
 
-    // Shared input for all players (keyboard + up to 4 controllers); owned by TumbalataGame
-    private InputManager inputs;
-
     private MapCollision playerWalls;
     private MapCollision canWalls;
-    private MapCollision canBlockers;
 
     private boolean debugCollision = false;
     private int debugView = 0;
     private float ringX = RING_X;
     private float ringY = RING_Y;
 
-    // --- PLAYERS ---
-    // Spawn spots, relative to the throw line / can base. Waiting Throwers stand behind the active one.
-    private static final float THROWER_SPAWN_BEHIND_LINE = 50f;
-    private static final float TAYA_SPAWN_RIGHT_OF_BASE = 80f;
-    private static final float[][] WAITING_THROWER_OFFSETS = { { -130f, 90f }, { -130f, -90f }, { -200f, 0f } };
-    private static final float NAME_TAG_Y = 34f;
+    private final int[] characters;                        // characters[playerId] = picked character
+    private final Array<Player> drawOrder = new Array<>(); // players sorted back to front each frame
+    private Match match;
+    private boolean matchEnded = false;
 
-    private final int[] characters;                       // characters[playerId] = picked character
-    private final Array<Player> players = new Array<>();  // index = player id (0 = Player 1)
-    private final Array<Player> drawOrder = new Array<>(); // same players, sorted back to front each frame
-    private Roster roster;
-
-    // --- MATCH TIMER ---
-    private static final float MATCH_TIME_SECONDS = 40f;
-    private static final int VICTORY_WINDOW_W = 700;
-    private static final int VICTORY_WINDOW_H = 500;
-    private float matchTimeLeft = MATCH_TIME_SECONDS;
-    private boolean matchOver = false;
-
-    private boolean fakeScoresForTesting = true;
-
-
-    /**
-     * Where the round is. Each Thrower has their own slipper and everyone throws once per round, in turn order.
-     */
-    private enum RoundMode {
-        /** Throwers take turns. Nobody has hit the can yet: slippers stay where they land and nobody can be tagged. */
-        THROWING,
-        /** Everyone threw and missed: Taya picks up the can and tosses it at a slipper. */
-        TAYA_TOSS,
-        /** Taya's can is in the air or rolling. */
-        TOSS_FLYING,
-        /**
-         * The can was hit, or Taya's toss missed: Throwers grab their own slipper and run home, Taya stands the can
-         * back up and then may tag anyone past the line. Throwers who haven't thrown yet still may.
-         */
-        SCRAMBLE
+    private static final class Popup {
+        Player player;
+        String text;
+        float age;
     }
-
-    private enum Aim { NONE, ANGLE, POWER }
-
-    private RoundMode mode = RoundMode.THROWING;
-    private Aim aim = Aim.NONE;
-    private Player aimer; // who is aiming (a Thrower or Taya), null when aim == NONE
-
-    private float throwLineX, screenWidth, screenHeight;
-    private Vector2 canBasePosition;
-    private Player taya; // shortcut to the roster's Taya, refreshed by applyRoles()
-    private Can can;
-
-    private float angleTimer = 0f, currentAngle = 0f;
-    private float powerTimer = 0f, currentPower = 0f;
-
-    private Vector2 canLandingSpot = new Vector2();
-    private boolean isImpactPending = false;
-    private float impactDelayTimer = 0f;
-    private Player impactVictim; // whose slipper Taya's can hit
+    private final Array<Popup> popups = new Array<>();
 
     /** @param characters one picked character per player (2 to 4 players); characters[0] is Player 1's */
     public GameScreen(int[] characters) {
@@ -185,141 +120,51 @@ public class GameScreen implements Screen {
         font.setColor(Color.WHITE);
         font.getData().setScale(1.2f);
 
-        inputs = ((TumbalataGame) Gdx.app.getApplicationListener()).input();
-
-        screenWidth = WORLD_WIDTH;
-        screenHeight = WORLD_HEIGHT;
-        throwLineX = screenWidth * 0.25f;
-        canBasePosition = new Vector2(screenWidth * 0.8f, screenHeight * 0.5f);
+        InputManager inputs = ((TumbalataGame) Gdx.app.getApplicationListener()).input();
 
         map = new TmxMapLoader().load(MAP_FILE);
         mapRenderer = new OrthogonalTiledMapRenderer(map, 1f, spriteBatch);
 
         playerWalls = MapCollision.fromLayer(map, PLAYER_COLLISION_LAYER);
         canWalls = MapCollision.fromLayer(map, CAN_COLLISION_LAYER);
-        canBlockers = CAN_BLOCKED_BY_PLAYER_WALLS ? MapCollision.combine(canWalls, playerWalls) : canWalls;
+        MapCollision canBlockers = CAN_BLOCKED_BY_PLAYER_WALLS ? MapCollision.combine(canWalls, playerWalls) : canWalls;
 
-        upperRingTexture = new Texture(Gdx.files.internal(UPPER_RING_FILE));
-        upperRingTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        upperRingTexture = loadPixelTexture(UPPER_RING_FILE);
+        playerSheet = loadPixelTexture("16x16 Walk-Sheet.png");
+        playerSlipperSheet = loadPixelTexture("16x16 Walkwithslipper.png");
+        playerCanSheet = loadPixelTexture("Walkwithcan.png");
+        canSheet = loadPixelTexture("can_spin_sheet.png");
 
-        playerSheet = new Texture(Gdx.files.internal("16x16 Walk-Sheet.png"));
-        playerSheet.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        Can can = new Can(Match.CAN_BASE_X, Match.CAN_BASE_Y, canSheet, 4, 1, 0.08f);
 
-        playerSlipperSheet = new Texture(Gdx.files.internal("16x16 Walkwithslipper.png"));
-        playerSlipperSheet.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-
-        playerCanSheet = new Texture(Gdx.files.internal("Walkwithcan.png"));
-        playerCanSheet.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-
-        canSheet = new Texture(Gdx.files.internal("can_spin_sheet.png"));
-        canSheet.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-
-        can = new Can(canBasePosition.x, canBasePosition.y, canSheet, 4, 1, 0.08f);
-
-        roster = new Roster(characters.length);
+        Array<Player> players = new Array<>();
         for (int id = 0; id < characters.length; id++) {
-            // Position, speed and bounds are set by resetRound() below, from the player's role
+            // Position, speed and bounds are set by the match from the player's role
             Player p = new Player(id, characters[id], 0f, 0f, GameConstants.PLAYER_SPEED, inputs.player(id),
-                20f, screenWidth - 20f, 20f, screenHeight - 20f,
+                20f, Match.WORLD_WIDTH - 20f, 20f, Match.WORLD_HEIGHT - 20f,
                 playerSheet, playerSlipperSheet, playerCanSheet);
             p.slipper = new Slipper(0f, 0f);
             p.slipper.color.set(Color.BROWN).lerp(p.slotColor(), 0.5f);
             players.add(p);
             drawOrder.add(p);
         }
-        resetRound(false);
+
+        match = new Match(players, can, playerWalls, canBlockers, MATCH_TIME_SECONDS);
+        match.setEvents(new Match.Events() {
+            @Override
+            public void scored(Player player, int points) {
+                Popup popup = new Popup();
+                popup.player = player;
+                popup.text = "+" + points;
+                popups.add(popup);
+            }
+        });
     }
 
-    // ------------------------------------------------------------------
-    // Roles and rule checks
-    // ------------------------------------------------------------------
-
-    /** Points the taya shortcut at the roster's Taya and gives every player their role's speed. */
-    private void applyRoles() {
-        taya = players.get(roster.taya());
-        for (Player p : players) {
-            p.speed = roster.isTaya(p.id) ? GameConstants.TAYA_SPEED : GameConstants.PLAYER_SPEED;
-        }
-    }
-
-    /** The Thrower whose turn it is to throw: the first one in turn order who hasn't thrown yet, or null. */
-    private Player nextThrower() {
-        for (int i = 0; i < roster.throwers().size; i++) {
-            Player p = players.get(roster.throwers().get(i));
-            if (!p.hasThrown) return p;
-        }
-        return null;
-    }
-
-    private boolean isCanStanding() {
-        return !can.isHit && !taya.hasCan;
-    }
-
-    private boolean isCanStandingOnBase() {
-        return isCanStanding()
-            && Vector2.dst(can.position.x, can.position.y, canBasePosition.x, canBasePosition.y) < 10f;
-    }
-
-    /** Taya may pick the can up when it has been knocked over (or tossed), or to toss it when everyone missed. */
-    private boolean canTayaPickUpCan() {
-        if (taya.hasCan) return false;
-        return (mode == RoundMode.SCRAMBLE && can.isHit) || mode == RoundMode.TAYA_TOSS;
-    }
-
-    /** Slippers on the ground may only be picked up once the can was hit or Taya's toss missed. */
-    private boolean canPickUpSlipper(Player p) {
-        return mode == RoundMode.SCRAMBLE && p != taya && !p.hasSlipper
-            && Vector2.dst(p.position.x, p.position.y, p.slipper.position.x, p.slipper.position.y) < 45f;
-    }
-
-    private boolean allSlippersStopped() {
-        for (Player p : players) {
-            if (p != taya && !p.hasSlipper && p.slipper.velocity.len() > 0) return false;
-        }
-        return true;
-    }
-
-    /** The round is over when every Thrower is back behind the line holding their own slipper. */
-    private boolean everyoneHome() {
-        if (aim != Aim.NONE) return false;
-        for (Player p : players) {
-            if (p == taya) continue;
-            if (!p.hasSlipper || p.position.x >= throwLineX) return false;
-        }
-        return true;
-    }
-
-    private void savePreviousPositions() {
-        for (Player p : players) p.prevPosition.set(p.position);
-    }
-
-    private void resolvePlayerCollision(Player p) {
-        playerWalls.slide(p.position, p.prevPosition.x, p.prevPosition.y,
-            PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
-    }
-
-    private void updateCan(float delta) {
-        if (taya.hasCan) return; // carried: drawn at Taya's hands
-
-        float oldX = can.position.x;
-        float oldY = can.position.y;
-
-        can.update(delta, OUTER_MIN_X, OUTER_MIN_Y, OUTER_MAX_X, OUTER_MAX_Y);
-
-        if (can.zPosition > CAN_WALL_MAX_HEIGHT) return;
-
-        canBlockers.sweep(can.position, can.velocity, oldX, oldY,
-            CAN_HITBOX_W, CAN_HITBOX_H, CAN_HITBOX_OFFSET_X, CAN_HITBOX_OFFSET_Y, CAN_WALL_BOUNCE);
-    }
-
-    private void updateSlipper(Slipper slipper, float delta) {
-        float oldX = slipper.position.x;
-        float oldY = slipper.position.y;
-
-        slipper.update(delta, OUTER_MIN_X, OUTER_MIN_Y, OUTER_MAX_X, OUTER_MAX_Y);
-
-        playerWalls.sweep(slipper.position, slipper.velocity, oldX, oldY,
-            SLIPPER_HITBOX_W, SLIPPER_HITBOX_H, 0f, 0f, SLIPPER_WALL_BOUNCE);
+    private static Texture loadPixelTexture(String file) {
+        Texture t = new Texture(Gdx.files.internal(file));
+        t.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        return t;
     }
 
     // ------------------------------------------------------------------
@@ -330,14 +175,18 @@ public class GameScreen implements Screen {
     public void render(float delta) {
         viewport.apply();
 
-        if (!matchOver) {
-            updateMatchTimer(delta);
+        handleScreenKeys();
+        if (!matchEnded) {
+            match.update(delta);
+            if (match.isOver()) endMatch();
         }
-        if (!matchOver) {
-            savePreviousPositions();
-            handleInput(delta);
-            update(delta);
+        for (int i = popups.size - 1; i >= 0; i--) {
+            popups.get(i).age += delta;
+            if (popups.get(i).age >= POPUP_TIME) popups.removeIndex(i);
         }
+
+        Player taya = match.taya();
+        Can can = match.can();
 
         ScreenUtils.clear(0f, 0f, 0f, 1f);
 
@@ -353,21 +202,17 @@ public class GameScreen implements Screen {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         shapeRenderer.setColor(Color.WHITE);
         if (SHOW_THROW_LINE) {
-            shapeRenderer.rectLine(throwLineX, VIEW_Y, throwLineX, VIEW_Y + VIEW_H, 4);
+            shapeRenderer.rectLine(Match.THROW_LINE_X, VIEW_Y, Match.THROW_LINE_X, VIEW_Y + VIEW_H, 4);
         }
 
         shapeRenderer.setColor(Color.LIGHT_GRAY);
-        shapeRenderer.circle(canBasePosition.x, canBasePosition.y, 16f);
-
-        if (taya.hasCan) {
-            can.position.set(taya.position.x, taya.position.y + 15);
-        }
+        shapeRenderer.circle(match.canBase().x, match.canBase().y, 16f);
 
         can.renderShadow(shapeRenderer);
-        for (Player p : players) p.renderShadow(shapeRenderer);
+        for (Player p : match.players()) p.renderShadow(shapeRenderer);
 
-        for (Player p : players) {
-            if (p != taya && !p.hasSlipper) p.slipper.render(shapeRenderer);
+        for (Player p : match.players()) {
+            if (match.isSlipperOut(p)) p.slipper.render(shapeRenderer);
         }
         shapeRenderer.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
@@ -401,103 +246,20 @@ public class GameScreen implements Screen {
         spriteBatch.draw(upperRingTexture, ringX, ringY);
 
         drawNameTags();
-
-        for (Player p : players) {
-            if (canPickUpSlipper(p)) {
-                font.draw(spriteBatch, p.label() + " [B] Pick Up Slipper", p.slipper.position.x - 60f, p.slipper.position.y + 25f);
-            }
-        }
-
-        if (canTayaPickUpCan() && Vector2.dst(taya.position.x, taya.position.y, can.position.x, can.position.y) < 35f) {
-            font.draw(spriteBatch, "[B] Pick Up Can", can.position.x - 35f, can.position.y + 30f);
-        }
-
-        if (mode == RoundMode.SCRAMBLE && taya.hasCan
-            && Vector2.dst(taya.position.x, taya.position.y, canBasePosition.x, canBasePosition.y) < 35f) {
-            font.draw(spriteBatch, "[B] Place Can at Base", canBasePosition.x - 45f, canBasePosition.y + 35f);
-        }
-
-        float timerLeft = Math.max(0f, matchTimeLeft);
-        int totalSeconds = MathUtils.ceil(timerLeft);
-        String timerText = (totalSeconds / 60) + ":" + String.format("%02d", totalSeconds % 60);
-        font.getData().setScale(2.2f);
-        font.setColor(timerLeft <= 10f ? Color.SCARLET : Color.WHITE);
-        font.draw(spriteBatch, timerText, VIEW_X + VIEW_W / 2f - 100f, VIEW_Y + VIEW_H - 14f, 200f, Align.center, false);
-        font.getData().setScale(1.2f);
-        font.setColor(Color.WHITE);
-
-        font.draw(spriteBatch, statusText(), VIEW_X + VIEW_W / 2f - 300f, VIEW_Y + VIEW_H - 54f, 600f, Align.center, false);
+        drawPrompts();
+        drawPopups();
+        drawHud();
 
         spriteBatch.end();
 
-        renderUIOverlays();
+        renderAimOverlay();
 
         if (debugCollision) {
             renderDebugCollision();
         }
     }
 
-    /** One line under the timer saying what the round is waiting for. */
-    private String statusText() {
-        switch (mode) {
-            case THROWING: {
-                Player up = nextThrower();
-                return up != null ? up.label() + ", your throw!" : "Waiting for the slippers to stop...";
-            }
-            case TAYA_TOSS:
-                return "Everyone missed! " + taya.label() + " (Taya): pick up the can and toss it at a slipper";
-            case TOSS_FLYING:
-                return "";
-            case SCRAMBLE:
-            default:
-                return isCanStandingOnBase()
-                    ? "The can is up: Taya can tag anyone past the line!"
-                    : "Grab your slipper and get back behind the line!";
-        }
-    }
-
-    private static final Comparator<Player> BACK_TO_FRONT = (a, b) -> Float.compare(b.position.y, a.position.y);
-
-    /** "P1" over each player in their slot colour; the Taya is marked, Throwers who already threw are dimmed. */
-    private void drawNameTags() {
-        font.getData().setScale(1f);
-        for (Player p : players) {
-            String text = (p == taya) ? p.label() + " TAYA" : p.label();
-            Color c = p.slotColor();
-            font.setColor(c.r, c.g, c.b, (p != taya && p.hasThrown) ? 0.7f : 1f);
-            font.draw(spriteBatch, text, p.position.x - 50f, p.position.y + NAME_TAG_Y, 100f, Align.center, false);
-        }
-        font.getData().setScale(1.2f);
-        font.setColor(Color.WHITE);
-    }
-
-    private void updateMatchTimer(float delta) {
-        matchTimeLeft -= delta;
-        if (matchTimeLeft <= 0f) {
-            endMatch();
-        }
-    }
-
-    private void endMatch() {
-        matchOver = true;
-
-        int[] finalScores = new int[players.size];
-        for (Player p : players) {
-            finalScores[p.id] = fakeScoresForTesting ? MathUtils.random(0, 20) : p.score;
-        }
-
-        if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
-            TumbalataGame tumbalata = (TumbalataGame) Gdx.app.getApplicationListener();
-            tumbalata.changeScreen(new VictoryScreen(tumbalata, finalScores, characters),
-                VICTORY_WINDOW_W, VICTORY_WINDOW_H);
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Input
-    // ------------------------------------------------------------------
-
-    private void handleInput(float delta) {
+    private void handleScreenKeys() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.F11)) {
             if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
                 ((TumbalataGame) Gdx.app.getApplicationListener()).toggleFullscreen();
@@ -516,282 +278,122 @@ public class GameScreen implements Screen {
             if (Gdx.input.isKeyJustPressed(Input.Keys.J)) ringX -= step;
             if (Gdx.input.isKeyJustPressed(Input.Keys.L)) ringX += step;
         }
+    }
 
-        // --- Movement: everyone, except a Thrower who is aiming (Taya can walk while aiming, as before) ---
-        for (Player p : players) {
-            if (p == aimer && p != taya) continue;
-            p.handleInput(delta);
-        }
-
-        // --- B: Throwers pick up their own slipper ---
-        for (Player p : players) {
-            if (p.input.bPressed && canPickUpSlipper(p)) p.hasSlipper = true;
-        }
-
-        // --- B: Taya picks up the can, or puts it back on its base ---
-        if (taya.input.bPressed) {
-            if (canTayaPickUpCan()
-                && Vector2.dst(taya.position.x, taya.position.y, can.position.x, can.position.y) < 35f) {
-                taya.hasCan = true;
-            } else if (mode == RoundMode.SCRAMBLE && taya.hasCan
-                && Vector2.dst(taya.position.x, taya.position.y, canBasePosition.x, canBasePosition.y) < 35f) {
-                taya.hasCan = false;
-                can.reset(canBasePosition.x, canBasePosition.y);
-            }
-        }
-
-        // --- A: aim (angle, then power, then release) ---
-        if (aim == Aim.NONE) {
-            Player up = nextThrower();
-            if ((mode == RoundMode.THROWING || mode == RoundMode.SCRAMBLE) && up != null && up.hasSlipper
-                && up.input.aPressed) {
-                startAim(up);
-            } else if (mode == RoundMode.TAYA_TOSS && taya.hasCan && taya.input.aPressed) {
-                startAim(taya);
-            }
-        } else if (aimer.input.aPressed) {
-            if (aim == Aim.ANGLE) {
-                aim = Aim.POWER;
-                powerTimer = 0f;
-            } else {
-                Player who = aimer;
-                aim = Aim.NONE;
-                aimer = null;
-                if (who == taya) {
-                    tayaThrowCan();
-                    mode = RoundMode.TOSS_FLYING;
-                } else {
-                    launchSlipper(who);
-                }
-            }
-        }
-
-        // Reset round: Select (any player's pad) or R
-        for (Player p : players) {
-            if (p.input.selectPressed) {
-                resetRound(false);
-                break;
-            }
+    private void endMatch() {
+        matchEnded = true;
+        if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
+            TumbalataGame tumbalata = (TumbalataGame) Gdx.app.getApplicationListener();
+            tumbalata.changeScreen(new VictoryScreen(tumbalata, match.scores(), characters),
+                VICTORY_WINDOW_W, VICTORY_WINDOW_H);
         }
     }
 
-    private void startAim(Player p) {
-        aimer = p;
-        aim = Aim.ANGLE;
-        angleTimer = 0f;
+    // ------------------------------------------------------------------
+    // HUD and labels (inside spriteBatch.begin/end)
+    // ------------------------------------------------------------------
+
+    private static final Comparator<Player> BACK_TO_FRONT = (a, b) -> Float.compare(b.position.y, a.position.y);
+
+    /** "P1" over each player in their slot colour; the Taya is marked, Throwers who already threw are dimmed. */
+    private void drawNameTags() {
+        Player taya = match.taya();
+        font.getData().setScale(1f);
+        for (Player p : match.players()) {
+            String text = (p == taya) ? p.label() + " TAYA" : p.label();
+            Color c = p.slotColor();
+            font.setColor(c.r, c.g, c.b, (p != taya && p.hasThrown) ? 0.7f : 1f);
+            font.draw(spriteBatch, text, p.position.x - 50f, p.position.y + NAME_TAG_Y, 100f, Align.center, false);
+        }
+        font.getData().setScale(1.2f);
+        font.setColor(Color.WHITE);
     }
 
-    // ------------------------------------------------------------------
-    // Rules
-    // ------------------------------------------------------------------
-
-    private void update(float delta) {
-        for (Player p : players) {
-            p.update(delta);
-            resolvePlayerCollision(p);
-        }
-
-        if (aim == Aim.ANGLE) {
-            if (aimer == taya) {
-                angleTimer += delta * 4f;
-                currentAngle = (angleTimer * 50f) % 360f;
-            } else {
-                angleTimer += delta * 3.5f;
-                currentAngle = MathUtils.sin(angleTimer) * 80f;
-            }
-        } else if (aim == Aim.POWER) {
-            powerTimer += delta * 4f;
-            currentPower = ((MathUtils.sin(powerTimer) + 1f) / 2f) * 100f;
-        }
-
-        updateCan(delta);
-
-        // Slippers on the ground or in flight; a moving slipper knocks over a standing can
-        for (Player p : players) {
-            if (p == taya || p.hasSlipper) continue;
-            boolean moving = p.slipper.velocity.len() > 0;
-            updateSlipper(p.slipper, delta);
-            if (moving && isCanStanding() && mode != RoundMode.TOSS_FLYING
-                && Vector2.dst(p.slipper.position.x, p.slipper.position.y, can.position.x, can.position.y) < 25f) {
-                triggerCanHit(p.slipper);
+    private void drawPrompts() {
+        Can can = match.can();
+        for (Player p : match.players()) {
+            if (match.canPickUpSlipper(p)) {
+                font.draw(spriteBatch, p.label() + " [B] Pick Up Slipper", p.slipper.position.x - 60f, p.slipper.position.y + 25f);
             }
         }
+        if (match.canTayaPickUpCan() && match.isTayaNearCan()) {
+            font.draw(spriteBatch, "[B] Pick Up Can", can.position.x - 35f, can.position.y + 30f);
+        }
+        if (match.canTayaPlaceCan()) {
+            font.draw(spriteBatch, "[B] Place Can at Base", match.canBase().x - 45f, match.canBase().y + 35f);
+        }
+    }
 
-        switch (mode) {
-            case THROWING:
-                // Everyone threw, nothing hit the can: Taya's turn to toss
-                if (nextThrower() == null && aim == Aim.NONE && allSlippersStopped()) {
-                    mode = RoundMode.TAYA_TOSS;
-                }
-                break;
+    private void drawPopups() {
+        font.getData().setScale(1.6f);
+        for (Popup popup : popups) {
+            float t = popup.age / POPUP_TIME;
+            Color c = popup.player.slotColor();
+            font.setColor(c.r, c.g, c.b, 1f - t);
+            Player p = popup.player;
+            font.draw(spriteBatch, popup.text, p.position.x - 30f, p.position.y + NAME_TAG_Y + 22f + t * POPUP_RISE,
+                60f, Align.center, false);
+        }
+        font.getData().setScale(1.2f);
+        font.setColor(Color.WHITE);
+    }
 
+    /** Timer and status line at the top centre, scores at the top left. */
+    private void drawHud() {
+        float timerLeft = match.timeLeft();
+        int totalSeconds = MathUtils.ceil(timerLeft);
+        String timerText = (totalSeconds / 60) + ":" + String.format("%02d", totalSeconds % 60);
+        font.getData().setScale(2.2f);
+        font.setColor(timerLeft <= 10f ? Color.SCARLET : Color.WHITE);
+        font.draw(spriteBatch, timerText, VIEW_X + VIEW_W / 2f - 100f, VIEW_Y + VIEW_H - 14f, 200f, Align.center, false);
+        font.getData().setScale(1.2f);
+        font.setColor(Color.WHITE);
+
+        font.draw(spriteBatch, statusText(), VIEW_X + VIEW_W / 2f - 300f, VIEW_Y + VIEW_H - 54f, 600f, Align.center, false);
+
+        font.getData().setScale(1.5f);
+        float y = VIEW_Y + VIEW_H - 16f;
+        for (Player p : match.players()) {
+            font.setColor(p.slotColor());
+            font.draw(spriteBatch, p.label() + (p == match.taya() ? " (Taya)" : "") + "  " + p.score, VIEW_X + 20f, y);
+            y -= 26f;
+        }
+        font.getData().setScale(1.2f);
+        font.setColor(Color.WHITE);
+    }
+
+    /** One line under the timer saying what the round is waiting for. */
+    private String statusText() {
+        switch (match.mode()) {
+            case THROWING: {
+                Player up = match.nextThrower();
+                return up != null ? up.label() + ", your throw!" : "Waiting for the slippers to stop...";
+            }
             case TAYA_TOSS:
-                break;
-
+                return "Everyone missed! " + match.taya().label() + " (Taya): pick up the can and toss it at a slipper";
             case TOSS_FLYING:
-                if (isImpactPending) {
-                    impactDelayTimer += delta;
-                    if (impactDelayTimer >= 0.6f) {
-                        isImpactPending = false;
-                        impactDelayTimer = 0f;
-                        swapRoles(impactVictim); // Taya's can hit this Thrower's slipper
-                    }
-                    return;
-                }
-
-                if (can.zPosition <= 0 && can.zVelocity <= 0) {
-                    for (Player p : players) {
-                        if (p == taya || p.hasSlipper) continue;
-                        if (Vector2.dst(can.position.x, can.position.y, p.slipper.position.x, p.slipper.position.y) < 30f) {
-                            triggerTayaCanHitSlipper(p);
-                            return;
-                        }
-                    }
-                    if (can.velocity.len() == 0) {
-                        mode = RoundMode.SCRAMBLE; // missed: grab your slippers and run!
-                    }
-                }
-                break;
-
+                return "";
             case SCRAMBLE:
-                if (everyoneHome()) {
-                    resetRound(true);
-                    return;
-                }
-                checkTaggingLogic();
-                break;
+            default:
+                return match.isCanStandingOnBase()
+                    ? "The can is up: Taya can tag anyone past the line!"
+                    : "Grab your slipper and get back behind the line!";
         }
     }
 
-    /** Once the can stands on its base again, Taya can tag any Thrower past the line. */
-    private void checkTaggingLogic() {
-        if (!isCanStandingOnBase()) return;
+    // ------------------------------------------------------------------
+    // Shapes
+    // ------------------------------------------------------------------
 
-        for (Player p : players) {
-            if (p == taya || p.position.x <= throwLineX) continue;
-            if (Vector2.dst(taya.position.x, taya.position.y, p.position.x, p.position.y) < 30f) {
-                swapRoles(p);
-                return;
-            }
-        }
-    }
+    private void renderAimOverlay() {
+        Player aimer = match.aimer();
+        if (aimer == null) return;
+        boolean isTaya = aimer == match.taya();
 
-    /** {@code newTaya} (a Thrower) becomes Taya; the old Taya becomes a Thrower and throws first. */
-    private void swapRoles(Player newTaya) {
-        roster.swapWithTaya(newTaya.id);
-        resetRound(false);
-    }
-
-    private void launchSlipper(Player p) {
-        // Once their slipper is thrown, a Thrower may cross the line (until the round resets)
-        p.setXBounds(20, screenWidth - 20);
-        p.hasThrown = true;
-        p.hasSlipper = false;
-
-        p.slipper.position.set(p.position);
-        float rad = currentAngle * MathUtils.degreesToRadians;
-        float speed = currentPower * 18f;
-        p.slipper.velocity.set(MathUtils.cos(rad) * speed, MathUtils.sin(rad) * speed);
-    }
-
-    private void triggerCanHit(Slipper slipper) {
-        can.isHit = true;
-        mode = RoundMode.SCRAMBLE;
-        taya.hasCan = false;
-
-        float hitAngle = MathUtils.atan2(can.position.y - slipper.position.y, can.position.x - slipper.position.x);
-        float slipperImpactSpeed = slipper.velocity.len();
-
-        float speedMultiplier = slipperImpactSpeed * 0.85f;
-        float targetVx = MathUtils.cos(hitAngle) * speedMultiplier;
-        float targetVy = MathUtils.sin(hitAngle) * speedMultiplier;
-
-        float equivalentPower = MathUtils.clamp((slipperImpactSpeed / 1200f) * 100f, 20f, 100f);
-
-        can.toss(targetVx, targetVy, equivalentPower);
-        slipper.velocity.scl(0.5f);
-    }
-
-    private void tayaThrowCan() {
-        taya.hasCan = false;
-        float rad = currentAngle * MathUtils.degreesToRadians;
-
-        can.position.set(taya.position);
-        can.zPosition = CAN_RELEASE_HEIGHT;
-        can.zVelocity = 0f;
-        can.velocity.set(0f, 0f);
-
-        float powerRatio = MathUtils.clamp(currentPower / 100f, 0f, 1f);
-        float throwDistance = CAN_MIN_THROW_DISTANCE
-            + (CAN_MAX_THROW_DISTANCE - CAN_MIN_THROW_DISTANCE) * (float) Math.pow(powerRatio, CAN_POWER_CURVE);
-        canLandingSpot.set(taya.position).add(MathUtils.cos(rad) * throwDistance, MathUtils.sin(rad) * throwDistance);
-
-        can.tossTo(canLandingSpot.x, canLandingSpot.y, currentPower);
-    }
-
-    private void triggerTayaCanHitSlipper(Player victim) {
-        isImpactPending = true;
-        impactDelayTimer = 0f;
-        impactVictim = victim;
-
-        Slipper slipper = victim.slipper;
-        float hitAngle = MathUtils.atan2(slipper.position.y - can.position.y, slipper.position.x - can.position.x);
-        float knockbackSpeed = 350f;
-        slipper.velocity.set(MathUtils.cos(hitAngle) * knockbackSpeed, MathUtils.sin(hitAngle) * knockbackSpeed);
-
-        can.velocity.scl(0.3f);
-        can.zVelocity = 120f;
-    }
-
-    /**
-     * Starts a new round: everyone back on their spawn spot, Throwers holding their slipper and not yet thrown.
-     * @param nextTurn true when the round ended normally, so a different Thrower throws first next time
-     */
-    private void resetRound(boolean nextTurn) {
-        mode = RoundMode.THROWING;
-        aim = Aim.NONE;
-        aimer = null;
-
-        if (nextTurn) roster.nextTurn();
-        applyRoles();
-
-        // Throwers in turn order: the first one at the line, the rest on the waiting spots behind it
-        for (int i = 0; i < roster.throwers().size; i++) {
-            Player p = players.get(roster.throwers().get(i));
-            p.setXBounds(20, throwLineX - 20);
-            p.hasSlipper = true;
-            p.hasThrown = false;
-            p.hasCan = false;
-            if (i == 0) {
-                p.position.set(throwLineX - THROWER_SPAWN_BEHIND_LINE, screenHeight * 0.5f);
-            } else {
-                float[] spot = WAITING_THROWER_OFFSETS[(i - 1) % WAITING_THROWER_OFFSETS.length];
-                p.position.set(throwLineX - THROWER_SPAWN_BEHIND_LINE + spot[0], screenHeight * 0.5f + spot[1]);
-            }
-            p.slipper.reset(p.position.x, p.position.y);
-        }
-
-        taya.setXBounds(20, screenWidth - 20);
-        taya.position.set(canBasePosition.x + TAYA_SPAWN_RIGHT_OF_BASE, canBasePosition.y);
-        taya.hasCan = false;
-        taya.hasSlipper = false;
-        taya.hasThrown = false;
-        taya.slipper.reset(taya.position.x, taya.position.y);
-
-        can.reset(canBasePosition.x, canBasePosition.y);
-
-        angleTimer = 0f;
-        powerTimer = 0f;
-        isImpactPending = false;
-        impactDelayTimer = 0f;
-        impactVictim = null;
-    }
-
-    private void renderUIOverlays() {
-        if (aim == Aim.ANGLE) {
+        if (match.aim() == Match.Aim.ANGLE) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-            shapeRenderer.setColor(aimer == taya ? Color.RED : Color.BLUE);
-            float rad = currentAngle * MathUtils.degreesToRadians;
+            shapeRenderer.setColor(isTaya ? Color.RED : Color.BLUE);
+            float rad = match.angle() * MathUtils.degreesToRadians;
             shapeRenderer.line(
                 aimer.position.x,
                 aimer.position.y,
@@ -799,16 +401,14 @@ public class GameScreen implements Screen {
                 aimer.position.y + MathUtils.sin(rad) * 65f
             );
             shapeRenderer.end();
-        }
-
-        if (aim == Aim.POWER) {
+        } else if (match.aim() == Match.Aim.POWER) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
             shapeRenderer.setColor(Color.LIGHT_GRAY);
             shapeRenderer.rect(aimer.position.x - 25, aimer.position.y + 30, 50, 10);
 
-            shapeRenderer.setColor(aimer == taya ? Color.RED : Color.GREEN);
-            shapeRenderer.rect(aimer.position.x - 25, aimer.position.y + 30, 50 * (currentPower / 100f), 10);
+            shapeRenderer.setColor(isTaya ? Color.RED : Color.GREEN);
+            shapeRenderer.rect(aimer.position.x - 25, aimer.position.y + 30, 50 * (match.power() / 100f), 10);
             shapeRenderer.end();
         }
     }
@@ -834,7 +434,7 @@ public class GameScreen implements Screen {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
 
         shapeRenderer.setColor(Color.WHITE);
-        shapeRenderer.rect(0f, 0f, WORLD_WIDTH, WORLD_HEIGHT);
+        shapeRenderer.rect(0f, 0f, Match.WORLD_WIDTH, Match.WORLD_HEIGHT);
         shapeRenderer.setColor(Color.MAGENTA);
         shapeRenderer.rect(ringX, ringY,
             upperRingTexture.getWidth(),
@@ -850,14 +450,16 @@ public class GameScreen implements Screen {
         }
 
         shapeRenderer.setColor(Color.CYAN);
-        for (Player p : players) {
-            shapeRenderer.rect(p.position.x - PLAYER_HITBOX_W / 2f,
-                p.position.y + PLAYER_HITBOX_OFFSET_Y - PLAYER_HITBOX_H / 2f, PLAYER_HITBOX_W, PLAYER_HITBOX_H);
+        for (Player p : match.players()) {
+            shapeRenderer.rect(p.position.x - Match.PLAYER_HITBOX_W / 2f,
+                p.position.y + Match.PLAYER_HITBOX_OFFSET_Y - Match.PLAYER_HITBOX_H / 2f,
+                Match.PLAYER_HITBOX_W, Match.PLAYER_HITBOX_H);
         }
 
+        Can can = match.can();
         shapeRenderer.setColor(Color.ORANGE);
-        shapeRenderer.rect(can.position.x + CAN_HITBOX_OFFSET_X - CAN_HITBOX_W / 2f,
-            can.position.y + CAN_HITBOX_OFFSET_Y - CAN_HITBOX_H / 2f, CAN_HITBOX_W, CAN_HITBOX_H);
+        shapeRenderer.rect(can.position.x + Match.CAN_HITBOX_OFFSET_X - Match.CAN_HITBOX_W / 2f,
+            can.position.y + Match.CAN_HITBOX_OFFSET_Y - Match.CAN_HITBOX_H / 2f, Match.CAN_HITBOX_W, Match.CAN_HITBOX_H);
 
         shapeRenderer.end();
     }

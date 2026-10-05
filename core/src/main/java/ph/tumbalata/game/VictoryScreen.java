@@ -52,7 +52,9 @@ public class VictoryScreen implements Screen {
     private final TumbalataGame game;
     private final int playerCount;
     private final int[] scores;
-    private final int[] order;        // order[rank] = player index (rank 0 = highest score)
+    private final int[] order;        // order[slot] = player index (slot 0 = highest score, middle of the podium)
+    private final int[] places;       // places[slot] = shared rank (0 = 1st); tied scores share a place
+    private final String winnerText;  // "PLAYER 2 WINS!" or "P1 & P3 WIN!"
     private final Color[] colors;     // placeholder color per player
 
     private OrthographicCamera camera;
@@ -80,18 +82,9 @@ public class VictoryScreen implements Screen {
             this.scores[i] = scores[i];
         }
 
-        // Rank players by score, highest first (ties keep the lower player number first)
-        order = new int[this.playerCount];
-        for (int i = 0; i < this.playerCount; i++) order[i] = i;
-        for (int i = 0; i < this.playerCount; i++) {
-            for (int j = 0; j < this.playerCount - 1 - i; j++) {
-                if (this.scores[order[j]] < this.scores[order[j + 1]]) {
-                    int tmp = order[j];
-                    order[j] = order[j + 1];
-                    order[j + 1] = tmp;
-                }
-            }
-        }
+        order = orderByScore(this.scores);
+        places = places(this.scores, order);
+        winnerText = winnerText(order, places);
 
         // Each player is drawn in their own character's color
         colors = new Color[this.playerCount];
@@ -99,6 +92,45 @@ public class VictoryScreen implements Screen {
             int pick = (characters != null && p < characters.length) ? characters[p] : p;
             colors[p] = Characters.CARD_COLORS[MathUtils.clamp(pick, 0, Characters.COUNT - 1)];
         }
+    }
+
+    /** Player indexes sorted by score, highest first; ties keep the lower player number first. */
+    static int[] orderByScore(int[] scores) {
+        int n = scores.length;
+        int[] order = new int[n];
+        for (int i = 0; i < n; i++) order[i] = i;
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n - 1 - i; j++) {
+                if (scores[order[j]] < scores[order[j + 1]]) {
+                    int tmp = order[j];
+                    order[j] = order[j + 1];
+                    order[j + 1] = tmp;
+                }
+            }
+        }
+        return order;
+    }
+
+    /** Shared ranks for each podium slot: the number of players with a strictly higher score (so ties share). */
+    static int[] places(int[] scores, int[] order) {
+        int[] places = new int[order.length];
+        for (int slot = 0; slot < order.length; slot++) {
+            int better = 0;
+            for (int s : scores) if (s > scores[order[slot]]) better++;
+            places[slot] = better;
+        }
+        return places;
+    }
+
+    static String winnerText(int[] order, int[] places) {
+        StringBuilder names = new StringBuilder();
+        int winners = 0;
+        for (int slot = 0; slot < order.length && places[slot] == 0; slot++) {
+            if (winners > 0) names.append(" & ");
+            names.append("P").append(order[slot] + 1);
+            winners++;
+        }
+        return winners == 1 ? "PLAYER " + (order[0] + 1) + " WINS!" : names + " WIN!";
     }
 
     @Override
@@ -179,10 +211,12 @@ public class VictoryScreen implements Screen {
             shapeRenderer.rect(0, 0, MENU_WIDTH, BASE_Y);
         }
 
-        for (int rank = 0; rank < playerCount; rank++) {
-            float cx = SLOT_CENTER_X[rank];
+        // slot = podium position (by score order); place = shared rank, so tied players get the same block and label
+        for (int slot = 0; slot < playerCount; slot++) {
+            int rank = places[slot];
+            float cx = SLOT_CENTER_X[slot];
             float w = BLOCK_W[rank];
-            float h = BLOCK_H[rank] * riseProgress(rank);
+            float h = BLOCK_H[rank] * riseProgress(slot);
 
             Color bc = blockColor(rank);
             shapeRenderer.setColor(bc);
@@ -190,7 +224,7 @@ public class VictoryScreen implements Screen {
             shapeRenderer.setColor(Math.min(1f, bc.r + 0.15f), Math.min(1f, bc.g + 0.15f), Math.min(1f, bc.b + 0.15f), 1f);
             shapeRenderer.rect(cx - w / 2f, BASE_Y + h - 6f, w, 6f);   // lighter top edge
 
-            float pop = popProgress(rank);
+            float pop = popProgress(slot);
             if (pop > 0f) {
                 float s = FIGURE_SCALE[rank] * pop;
                 float footY = BASE_Y + BLOCK_H[rank] + ((rank == 0) ? MathUtils.sin(time * 4f) * 3f + 3f : 0f);
@@ -200,7 +234,7 @@ public class VictoryScreen implements Screen {
                 shapeRenderer.ellipse(cx - 18f * s, BASE_Y + BLOCK_H[rank] - 4f * s, 36f * s, 8f * s);
 
                 // placeholder character: body + head in the player's color
-                Color pc = colors[order[rank]];
+                Color pc = colors[order[slot]];
                 shapeRenderer.setColor(pc);
                 shapeRenderer.rect(cx - 14f * s, footY, 28f * s, 38f * s);
                 shapeRenderer.circle(cx, footY + 50f * s, 12f * s);
@@ -232,9 +266,10 @@ public class VictoryScreen implements Screen {
             drawCentered("VICTORY!", MENU_WIDTH / 2f, TITLE_CENTER_Y + 14f + titleBob, 3f, Color.GOLD);
         }
 
-        for (int rank = 0; rank < playerCount; rank++) {
-            float cx = SLOT_CENTER_X[rank];
-            float riseP = riseProgress(rank);
+        for (int slot = 0; slot < playerCount; slot++) {
+            int rank = places[slot];
+            float cx = SLOT_CENTER_X[slot];
+            float riseP = riseProgress(slot);
             float blockTopY = BASE_Y + BLOCK_H[rank] * riseP;
 
             // rank label inside the block
@@ -243,17 +278,17 @@ public class VictoryScreen implements Screen {
             }
 
             // name and score above the character
-            if (popProgress(rank) >= 1f) {
+            if (popProgress(slot) >= 1f) {
                 float s = FIGURE_SCALE[rank];
                 float aboveY = BASE_Y + BLOCK_H[rank] + 80f * s + (rank == 0 ? 22f : 8f);
-                int player = order[rank];
+                int player = order[slot];
                 drawCentered("P" + (player + 1), cx, aboveY + 18f, rank == 0 ? 1.8f : 1.2f, Color.WHITE);
                 drawCentered(scores[player] + " pts", cx, aboveY, rank == 0 ? 1.3f : 1f, Color.LIGHT_GRAY);
             }
         }
 
         if (time >= revealEndTime()) {
-            drawCentered("PLAYER " + (order[0] + 1) + " WINS!", MENU_WIDTH / 2f, 395f, 1.8f, Color.WHITE);
+            drawCentered(winnerText, MENU_WIDTH / 2f, 395f, 1.8f, Color.WHITE);
             if (((int) (time * 2f)) % 2 == 0) { // blinking hint
                 drawCentered("PRESS ENTER TO CONTINUE", MENU_WIDTH / 2f, 40f, 1.1f, Color.LIGHT_GRAY);
             }

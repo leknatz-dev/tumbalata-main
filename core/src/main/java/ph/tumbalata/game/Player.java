@@ -79,7 +79,10 @@ public class Player {
         this.minY = minY;
         this.maxY = maxY;
 
-        this.walkAnim = new PlayerAnimation(normalSheet, 0.12f);
+        // Sheets may be null (unit tests run without graphics); such a player has no sprite
+        if (normalSheet != null) {
+            this.walkAnim = new PlayerAnimation(normalSheet, 0.12f);
+        }
         if (slipperSheet != null) {
             this.walkWithSlipperAnim = new PlayerAnimation(slipperSheet, 0.12f);
         }
@@ -125,7 +128,7 @@ public class Player {
             walkWithCanAnim.update(delta, velocity);
         } else if (hasSlipper && walkWithSlipperAnim != null) {
             walkWithSlipperAnim.update(delta, velocity);
-        } else {
+        } else if (walkAnim != null) {
             walkAnim.update(delta, velocity);
         }
     }
@@ -136,8 +139,10 @@ public class Player {
             currentFrame = walkWithCanAnim.getCurrentFrame();
         } else if (hasSlipper && walkWithSlipperAnim != null) {
             currentFrame = walkWithSlipperAnim.getCurrentFrame();
-        } else {
+        } else if (walkAnim != null) {
             currentFrame = walkAnim.getCurrentFrame();
+        } else {
+            return;
         }
 
         float previousColor = batch.getPackedColor();

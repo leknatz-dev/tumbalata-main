@@ -52,7 +52,7 @@ Throwers try to knock down a can with their slippers (the pambato); one Taya gua
 
 **Match and scoring**
 
-A countdown timer ends the match and opens the victory screen, where the highest score stands in the middle of the podium, largest. The timer is 40 seconds for testing. There is no scoring system yet: the victory screen shows random placeholder scores (see Known issues and Open questions for what to decide).
+A countdown timer ends the match and opens the victory screen, where the highest score stands in the middle of the podium, largest. The timer is 40 seconds for testing. Points (values in `Scoring.java`): knocking the can down +3 to that Thrower; every Thrower who threw and gets home safe when a round ends +1; a tag +2 to Taya; a toss that lands on a slipper +2 to Taya. Scores show at the top left during play with "+N" pop-ups. Tied players share a place on the podium.
 
 ## Current status
 
@@ -132,7 +132,7 @@ F1 shows collision shapes and hitboxes, F2 cycles which layer is shown, and I / 
 
 ## Gameplay systems
 
-`GameScreen` runs the match as a finite state machine of ten phases (drawn below): Thrower roaming, selecting angle, selecting power, slipper flying, can-hit scramble, Taya waiting to pick up, Taya selecting angle, Taya selecting power, can flying, and retrieval. The Thrower and Taya are two `Player` objects whose references swap on a role swap; each keeps its own input and colour tint.
+`Match` (no graphics, unit-tested in `MatchTest`) runs the rules: a round mode (Throwing, Taya toss, toss flying, scramble), an aim state (angle, power) for whoever is aiming, tagging, scoring and the match timer. `Roster` decides who is Taya and the throwing order. `GameScreen` only loads assets, calls `match.update(delta)` each frame and draws what the match reports. `Match.Events` reports scoring, hits, tags and round ends for pop-ups, and later sound and effects.
 
 **Aiming and power**
 
@@ -285,7 +285,7 @@ The most important gap is that the Thrower can never cross the throw line, so tw
 | 2 | The 4-slot controller layer was written without access to the owner's pads and has not been run | Medium: unknown pad numbers or a compile error would block menus and the game | Run it with one pad, check the console button numbers, add `controller.properties` if needed |
 | 3 | The owner's VS Code / Gradle import is failing (see Build section) | Blocks all testing in the IDE | Fix the import; `gradlew.bat lwjgl3:run` works as a fallback |
 | 4 | ~~Only two `Player` objects~~ | **Fixed (Oct 2026):** `GameScreen` holds 2 to 4 players; `Roster` assigns 1 Taya and a turn order of Throwers | — |
-| 5 | No scoring: the victory screen uses random scores while `fakeScoresForTesting` is true | Medium | Define how points are earned, fill the `scores` array, set the flag to false |
+| 5 | ~~No scoring~~ | **Fixed (Oct 2026):** points awarded by `Match` (values in `Scoring`), shown in the HUD and on the podium; ties share a place | — |
 | 6 | Character choice only tints Player 1's sprite; there are no per-character sheets | Low | Replace the tint with per-character sheets when the art exists |
 | 7 | Gameplay positions (throw line at 25%, can base at 80% x / 50% y, spawns) are fractions of the 1280 x 704 grid, not measured on the painted art | Low | Tune against the final court art |
 | 8 | `GameConstants.WORLD_WIDTH/HEIGHT` (1280 x 720) and `CAN_FRICTION` are unused and differ from the game screen's own values | Low (confusing) | Remove or align |
@@ -329,7 +329,7 @@ The scoring rules and the 3 to 4 player rules block the most work, so they come 
 
 | # | Question | Why it matters | Assumption until decided |
 | --- | --- | --- | --- |
-| 1 | How are points earned (can knocked down, successful tag, can landing on the slipper, time spent as Taya)? | Needed for scoring and the victory podium | Not decided; random scores are shown |
+| 1 | How are points earned (can knocked down, successful tag, can landing on the slipper, time spent as Taya)? | Needed for scoring and the victory podium | **Decided:** knock the can +3, home safe +1, tag +2 (Taya), toss hits slipper +2 (Taya) |
 | 2 | How do 3 and 4 players play together (rotating queue, several throwers against one Taya, teams, free-for-all)? | Decides roles, spawn positions, HUD and what the 3P and 4P buttons mean | **Decided:** 1 Taya vs all other players as Throwers, who take turns throwing (P1, P2, P3...). A tagged Thrower, or the one whose slipper Taya's can hits, becomes Taya and the old Taya throws next. Last player starts as Taya. |
 | 3 | Should the Thrower be free to roam the whole arena after throwing? | Needed to fix the throw-line bounds | Yes, only until the round resets |
 | 4 | Keep menus at 700 x 500 or switch to 960 x 540 (16:9)? | Decides the size of all menu art | 700 x 500 stays in the code |
