@@ -86,6 +86,7 @@ public class GameScreen implements Screen {
     private final Array<Player> drawOrder = new Array<>(); // players sorted back to front each frame
     private Match match;
     private boolean matchEnded = false;
+    private Audio audio;
 
     private static final class Popup {
         Player player;
@@ -149,6 +150,10 @@ public class GameScreen implements Screen {
             drawOrder.add(p);
         }
 
+        audio = ((TumbalataGame) Gdx.app.getApplicationListener()).audio();
+        audio.play(Audio.Sfx.GAME_START);
+        audio.playMusic(Audio.Track.GAME);
+
         match = new Match(players, can, playerWalls, canBlockers, MATCH_TIME_SECONDS);
         match.setEvents(new Match.Events() {
             @Override
@@ -157,6 +162,32 @@ public class GameScreen implements Screen {
                 popup.player = player;
                 popup.text = "+" + points;
                 popups.add(popup);
+                audio.play(Audio.Sfx.SCORE);
+            }
+
+            @Override
+            public void slipperThrown(Player thrower) {
+                audio.playVaried(Audio.Sfx.THROW);
+            }
+
+            @Override
+            public void canTossed(Player taya) {
+                audio.playVaried(Audio.Sfx.THROW);
+            }
+
+            @Override
+            public void canKnocked(Player thrower) {
+                audio.playVaried(Audio.Sfx.CAN_HIT);
+            }
+
+            @Override
+            public void tossHitSlipper(Player taya, Player victim) {
+                audio.playVaried(Audio.Sfx.CAN_HIT);
+            }
+
+            @Override
+            public void tagged(Player taya, Player victim) {
+                audio.play(Audio.Sfx.TAG);
             }
         });
     }
@@ -282,6 +313,8 @@ public class GameScreen implements Screen {
 
     private void endMatch() {
         matchEnded = true;
+        audio.play(Audio.Sfx.GAME_END);
+        audio.stopMusic();
         if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
             TumbalataGame tumbalata = (TumbalataGame) Gdx.app.getApplicationListener();
             tumbalata.changeScreen(new VictoryScreen(tumbalata, match.scores(), characters),

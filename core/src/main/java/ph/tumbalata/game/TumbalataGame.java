@@ -54,10 +54,18 @@ public class TumbalataGame extends Game {
         return input;
     }
 
+    // All sound effects and music. One instance for the whole game.
+    private Audio audio;
+
+    public Audio audio() {
+        return audio;
+    }
+
     @Override
     public void create() {
         transition = new ScreenTransition();
         input = new InputManager();
+        audio = new Audio();
         // Size the launcher gave the window (also where "untouched" starts)
         autoW = Gdx.graphics.getWidth();
         autoH = Gdx.graphics.getHeight();
@@ -95,6 +103,8 @@ public class TumbalataGame extends Game {
     public void render() {
         input.setMenuLocked(transition.isActive());
         input.update();  // once per frame, before the screen reads it
+        if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.M)) audio.toggleMute(); // M = mute anywhere
+        audio.update(Gdx.graphics.getDeltaTime()); // music fades
         super.render(); // draws the current screen (and lets it read input, which may request a screen change)
 
         if (pendingScreen != null) {
@@ -104,6 +114,7 @@ public class TumbalataGame extends Game {
 
             transition.captureSnapshot();               // the old screen's last frame
             transition.begin(() -> applyWindowSize(w, h));
+            audio.play(Audio.Sfx.TRANSITION_ROLL);
             switchNow(next);                            // the new screen is underneath; the snapshot covers it
             return;
         }
@@ -135,6 +146,7 @@ public class TumbalataGame extends Game {
     public void dispose() {
         if (transition != null) transition.dispose();
         if (input != null) input.dispose();
+        if (audio != null) audio.dispose();
         releaseBackdrop();
         super.dispose();
     }

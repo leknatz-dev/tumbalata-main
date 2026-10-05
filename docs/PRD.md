@@ -74,7 +74,7 @@ The 2-player game loop and all menu screens work. The newest piece, the 4-slot c
 | Controller layer (4 slots, all screens) | Delivered, unverified | Blocked by the owner's VS Code / Gradle import problems |
 | Gameplay for 3 and 4 players | Not started | Rules undefined |
 | Scoring system | Not started | Points rules undefined |
-| Audio | Not started |  |
+| Audio | Working, placeholder sounds | `Audio` class; 12 effects and 3 music tracks wired in, all synthesized placeholders (see Audio) |
 | Thrower to Taya swap animation | Not started | Currently an instant swap |
 | Particles / game-screen effects | Not started |  |
 | Controller disconnect notice | Not started | A player with no pad simply stops moving |
@@ -242,6 +242,30 @@ All assets live in the `assets/` folder and are loaded by file name, which is ca
 
 Per-character sprite sheets do not exist yet: the four characters are currently one walk sheet with a colour tint (see Characters in the architecture section).
 
+## Audio
+
+All sound goes through one `Audio` class, created once by `TumbalataGame` (`game.audio()`). Screens call `play(Audio.Sfx.X)` for effects and `playMusic(Audio.Track.X)` for music; music fades between tracks, and asking for the track that is already playing does nothing, so the menu music carries on across the menus. **M** mutes and unmutes anywhere. Master, music and effects volume and mute are saved in Preferences (`tumbalata`), ready for a settings screen.
+
+Every file below is a synthesized **placeholder** (made by `tools/GenPlaceholderSounds.java`). To replace one, put a file with the same name in the same folder as `.ogg` (preferred), `.mp3` or `.wav`, and delete the placeholder if the extension differs. A missing file is logged and stays silent; `AudioAssetsTest` fails the build if a name the code uses has no file.
+
+| File (`assets/audio/...`) | When it plays |
+| --- | --- |
+| `sfx/ui_move` | Menu selection moves (keys, pad or mouse hover), character cursor moves |
+| `sfx/ui_confirm` | Menu button pressed, character locked in, leaving the victory screen |
+| `sfx/ui_back` | Back to the previous menu, character unlocked |
+| `sfx/ui_deny` | Trying to lock a character another player already has |
+| `sfx/transition_roll` | The rolling can sweeping across on every screen change (about 1.4 s) |
+| `sfx/game_start` | The match screen opens |
+| `sfx/game_end` | Time is up (whistle) |
+| `sfx/victory_fanfare` | The winner pops in on the podium |
+| `sfx/throw` | A slipper is thrown or Taya tosses the can (slight random pitch) |
+| `sfx/can_hit` | A slipper knocks the can down, or Taya's can lands on a slipper |
+| `sfx/tag` | Taya tags a Thrower |
+| `sfx/score` | Any points scored |
+| `music/menu` | Looping on the main menu, player count and character select |
+| `music/game` | Looping during the match (fades out at time up) |
+| `music/victory` | Looping on the victory screen |
+
 ## Build, run and environment
 
 **Requirements**
@@ -318,7 +342,7 @@ Work in this order: unblock and verify first, then finish the 2-player match, th
 | 2. 3 to 4 players | Per-player character pick | Each joined player picks a character on the select screen, with its own cursor |
 | 3. Content | Real character art | Four character sheets replace the colour tint; character cards, headings and victory art in place |
 | 3. Content | Thrower to Taya swap animation and game-screen effects | The swap is no longer instant; a short effect plays; dust and impact particles on the can and slipper |
-| 3. Content | Audio | Sounds for throw, can hit and bounce, swap, tag, menu and transition |
+| 3. Content | Audio | Replace the placeholder files in `assets/audio` with real sounds and music (names in the Audio section); add a volume screen |
 | 3. Content | Menu size decision (960 x 540) | If chosen: all menu art and layouts re-done at 960 x 540 and the code constants updated |
 | 3. Content | Pause screen and settings | Pause on Start; volume and a way to check controller mapping |
 | 4. Tech | Clean-up and packaging | One shared `MapCollision` class; unused dependencies and files removed; tests for the collision sweep and throw distance; a packaged Windows build |

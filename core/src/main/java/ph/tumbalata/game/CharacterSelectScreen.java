@@ -111,9 +111,11 @@ public class CharacterSelectScreen implements Screen {
         if (owner >= 0 && owner != p) {
             takenMessage = "P" + (p + 1) + ": " + Characters.NAMES[cursor[p]] + " IS TAKEN BY P" + (owner + 1);
             takenMessageTime = TAKEN_MESSAGE_SECONDS;
+            game.audio().play(Audio.Sfx.UI_DENY);
             return;
         }
         locked[p] = true;
+        game.audio().play(Audio.Sfx.UI_CONFIRM);
     }
 
     private boolean anyCursorOn(int card) {
@@ -124,6 +126,7 @@ public class CharacterSelectScreen implements Screen {
     @Override
     public void show() {
         leaving = false;
+        game.audio().playMusic(Audio.Track.MENU); // keeps playing if it already is
 
         camera = new OrthographicCamera();
         viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
@@ -295,17 +298,23 @@ public class CharacterSelectScreen implements Screen {
         for (int p = 0; p < playerCount; p++) {
             PlayerInput pin = input.player(p);
             if (locked[p]) {
-                if (pin.bPressed) locked[p] = false;
+                if (pin.bPressed) {
+                    locked[p] = false;
+                    game.audio().play(Audio.Sfx.UI_BACK);
+                }
                 continue;
             }
+            int before = cursor[p];
             if (pin.leftPressed) cursor[p] = (cursor[p] + Characters.COUNT - 1) % Characters.COUNT;
             if (pin.rightPressed) cursor[p] = (cursor[p] + 1) % Characters.COUNT;
+            if (cursor[p] != before) game.audio().play(Audio.Sfx.UI_MOVE);
             if (pin.aPressed || pin.startPressed) tryLock(p);
             else if (pin.bPressed) back = true; // B with nothing to cancel goes back a screen
         }
 
         if (back) {
             leaving = true;
+            game.audio().play(Audio.Sfx.UI_BACK);
             game.changeScreen(new PlayerSelectScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
             return;
         }
@@ -322,7 +331,10 @@ public class CharacterSelectScreen implements Screen {
         }
         // The mouse drives Player 1: hover to move, click to lock in
         if (!locked[0]) {
-            if (hovered != -1 && mouseMoved) cursor[0] = hovered;
+            if (hovered != -1 && mouseMoved && cursor[0] != hovered) {
+                cursor[0] = hovered;
+                game.audio().play(Audio.Sfx.UI_MOVE);
+            }
             if (Gdx.input.justTouched() && hovered != -1) {
                 cursor[0] = hovered;
                 tryLock(0);

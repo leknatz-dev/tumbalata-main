@@ -69,6 +69,7 @@ public class VictoryScreen implements Screen {
 
     private float time = 0f;
     private boolean leaving = false;
+    private boolean fanfarePlayed = false;
 
     /**
      * @param scores     one score per player (index 0 = Player 1); its length is the player count
@@ -136,6 +137,7 @@ public class VictoryScreen implements Screen {
     @Override
     public void show() {
         leaving = false;
+        game.audio().playMusic(Audio.Track.VICTORY);
 
         camera = new OrthographicCamera();
         viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
@@ -187,6 +189,10 @@ public class VictoryScreen implements Screen {
     @Override
     public void render(float delta) {
         time += delta;
+        if (!fanfarePlayed && time >= revealEndTime()) { // the winner has just popped in
+            fanfarePlayed = true;
+            game.audio().play(Audio.Sfx.VICTORY);
+        }
         handleInput();
 
         ScreenUtils.clear(0.10f, 0.12f, 0.20f, 1f);
@@ -316,6 +322,7 @@ public class VictoryScreen implements Screen {
         boolean confirm = in.confirm || in.back || Gdx.input.justTouched();
         if (confirm) {
             leaving = true;
+            game.audio().play(Audio.Sfx.UI_CONFIRM);
             game.changeScreen(new MainMenuScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
         }
     }

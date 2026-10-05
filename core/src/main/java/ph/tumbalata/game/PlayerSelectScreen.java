@@ -82,6 +82,7 @@ public class PlayerSelectScreen implements Screen {
     @Override
     public void show() {
         leaving = false;
+        game.audio().playMusic(Audio.Track.MENU); // keeps playing if it already is
 
         camera = new OrthographicCamera();
         viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
@@ -190,6 +191,7 @@ public class PlayerSelectScreen implements Screen {
         InputManager.MenuInput in = game.input().menu(); // keyboard + every controller, merged
         if (in.fullscreen) game.toggleFullscreen();
         if (leaving) return; // a screen change was requested; the screen keeps drawing while the transition plays
+        int before = selected;
         if (in.left) {
             selected = (selected + buttonBounds.length - 1) % buttonBounds.length;
         }
@@ -199,6 +201,7 @@ public class PlayerSelectScreen implements Screen {
 
         if (in.back) {
             leaving = true;
+            game.audio().play(Audio.Sfx.UI_BACK);
             if (game != null) {
                 game.changeScreen(new MainMenuScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
             }
@@ -221,11 +224,13 @@ public class PlayerSelectScreen implements Screen {
         boolean clicked = Gdx.input.justTouched() && hovered != -1;
         if (clicked) selected = hovered;
 
+        if (selected != before) game.audio().play(Audio.Sfx.UI_MOVE);
         if (confirm || clicked) startGame(PLAYER_COUNTS[selected]);
     }
 
     private void startGame(int playerCount) {
         leaving = true;
+        game.audio().play(Audio.Sfx.UI_CONFIRM);
         if (game != null) {
             game.changeScreen(new CharacterSelectScreen(game, playerCount), MENU_WINDOW_W, MENU_WINDOW_H);
         }

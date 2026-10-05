@@ -88,6 +88,8 @@ public class Match {
     /** Hooks for effects, sounds and HUD pop-ups. All methods are optional. */
     public interface Events {
         default void scored(Player player, int points) {}
+        default void slipperThrown(Player thrower) {}
+        default void canTossed(Player taya) {}
         default void canKnocked(Player thrower) {}
         default void tagged(Player taya, Player victim) {}
         default void tossHitSlipper(Player taya, Player victim) {}
@@ -479,6 +481,7 @@ public class Match {
         float rad = currentAngle * MathUtils.degreesToRadians;
         float speed = currentPower * SLIPPER_SPEED_PER_POWER;
         p.slipper.velocity.set(MathUtils.cos(rad) * speed, MathUtils.sin(rad) * speed);
+        events.slipperThrown(p);
     }
 
     private void triggerCanHit(Player thrower) {
@@ -516,6 +519,7 @@ public class Match {
             MathUtils.sin(rad) * tossDistance(currentPower));
 
         can.tossTo(canLandingSpot.x, canLandingSpot.y, currentPower);
+        events.canTossed(taya);
     }
 
     /** Where Taya's can first lands, measured from Taya, for a toss at {@code power} (0..100). */
