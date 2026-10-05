@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.BufferUtils;
 import com.badlogic.gdx.utils.ScreenUtils;
@@ -38,9 +39,12 @@ public class ScreenTransition {
     //     MOVE_ACROSS = false -> the frames play in place over the whole window (the old screen disappears at the halfway point)
     private static final int FRAME_COUNT = 8;
     private static final boolean MOVE_ACROSS = true;
-    private static final float FRAMES_PER_SECOND = 12f;   // only used when FRAME_COUNT > 1 and MOVE_ACROSS
+    // When moving across, the spin follows the distance travelled (like rolling), not the clock: the next frame shows
+    // every this many units of travel (the art is 540 units tall). Smaller = spins faster.
+    private static final float TRAVEL_PER_FRAME = 80f;
 
     private static final float DURATION = 1.4f;           // total seconds for the whole sweep
+    private static final boolean EASE = true;             // speed up on the way in, slow down on the way out
     private static final boolean RIGHT_TO_LEFT = true;    // false = sweeps left to right
     private static final boolean FLIP_ART = false;        // mirror the picture (use this if the can faces the wrong way)
 
@@ -121,6 +125,7 @@ public class ScreenTransition {
         if (!active || snapshot == null) return;
 
         float p = MathUtils.clamp(time / DURATION, 0f, 1f);
+        if (EASE) p = Interpolation.sine.apply(p);
         int backW = Gdx.graphics.getBackBufferWidth();
         int backH = Gdx.graphics.getBackBufferHeight();
         float virtualW = ART_HEIGHT * backW / (float) backH;
@@ -141,10 +146,18 @@ public class ScreenTransition {
 
         boolean playInPlace = texture != null && frames.length > 1 && !MOVE_ACROSS;
 
+        // The snapshot must be drawn fully opaque. The captured frame keeps the alpha the old screen left in the
+        // framebuffer (e.g. the menus' 35% dark overlay), and blending it would let the new screen show through.
         if (playInPlace) {
             // frames play over the whole window; the old screen is shown until the halfway point
+            if (p < 0.5f) {
+                batch.disableBlending();
+                batch.begin();
+                batch.draw(snapshot, 0, 0, virtualW, ART_HEIGHT);
+                batch.end();
+                batch.enableBlending();
+            }
             batch.begin();
-            if (p < 0.5f) batch.draw(snapshot, 0, 0, virtualW, ART_HEIGHT);
             int index = Math.min(frames.length - 1, (int) (p * frames.length));
             batch.draw(frames[index], 0, 0, virtualW, ART_HEIGHT);
             batch.end();
@@ -163,9 +176,11 @@ public class ScreenTransition {
             if (oldW > 0) {
                 Gdx.gl.glEnable(GL20.GL_SCISSOR_TEST);
                 Gdx.gl.glScissor(oldX, 0, oldW, backH);
+                batch.disableBlending();
                 batch.begin();
                 batch.draw(snapshot, 0, 0, virtualW, ART_HEIGHT);
                 batch.end();
+                batch.enableBlending();
                 Gdx.gl.glDisable(GL20.GL_SCISSOR_TEST);
             }
 
@@ -174,7 +189,8 @@ public class ScreenTransition {
             if (texture == null) {
                 batch.draw(blackPixel, x, 0, stripW, ART_HEIGHT);
             } else {
-                int index = (frames.length > 1) ? ((int) (time * FRAMES_PER_SECOND)) % frames.length : 0;
+                float travelled = RIGHT_TO_LEFT ? virtualW - x : x + stripW;
+                int index = (frames.length > 1) ? ((int) (travelled / TRAVEL_PER_FRAME)) % frames.length : 0;
                 if (FLIP_ART) {
                     batch.draw(frames[index], x + stripW, 0, -stripW, ART_HEIGHT);
                 } else {
