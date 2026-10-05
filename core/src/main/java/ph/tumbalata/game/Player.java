@@ -119,6 +119,12 @@ public class Player {
         position.y = Math.max(minY, Math.min(maxY, position.y));
     }
 
+    /** Stands still this frame (no movement, idle animation). */
+    public void stop() {
+        moving = false;
+        velocity.set(0, 0);
+    }
+
     public boolean isMoving() {
         return moving;
     }

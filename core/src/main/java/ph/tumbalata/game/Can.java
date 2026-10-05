@@ -20,7 +20,7 @@ public class Can {
 
     // --- TWEAKABLE FLING & PHYSICS PARAMETERS ---
     private float gravity = -850f;         // Tweak gravity (more negative = falls faster)
-    private float bounceFactor = 0.55f;    // Ground bounce elasticity (0 = no bounce, 1 = max bounce)
+    private float bounceFactor = 0.2f;     // Ground bounce elasticity (0 = no bounce, 1 = max bounce); kept low so the can barely hops
     private float friction = 0.95f;        // Ground slide friction
     private float wallBounceDamping = 0.75f; // Wall rebound speed retention (0.75 = retains 75% speed)
     private float tossPowerMultiplier = 3.5f; // Vertical jump scaling (lower = less air launch height)
@@ -171,13 +171,24 @@ public class Can {
             }
         }
 
-        // 5. Spin Animation & Rotation Updates
+        // 5. Spin animation and rotation, proportional to how fast the can moves (ground speed plus vertical speed),
+        //    so it spins fast when thrown and slows down smoothly as it rolls to a stop
         if (velocity.len() > 0 || zPosition > 0) {
-            float speedMultiplier = Math.max(1.0f, velocity.len() / 150f);
-            stateTime += delta * speedMultiplier;
-            rotationAngle += delta * 600f * speedMultiplier;
+            float spin = spinRate();
+            stateTime += delta * spin;
+            rotationAngle += delta * SPIN_DEGREES_PER_SECOND * spin;
             rotationAngle %= 360f;
         }
+    }
+
+    /** At this speed (px/s) the spin animation plays at its normal frame rate. */
+    static final float SPIN_REFERENCE_SPEED = 300f;
+    private static final float SPIN_DEGREES_PER_SECOND = 600f;
+
+    /** Animation speed multiplier: 1 at {@link #SPIN_REFERENCE_SPEED}, 0 when the can is still. */
+    float spinRate() {
+        float speed = (float) Math.sqrt(velocity.len2() + zVelocity * zVelocity);
+        return speed / SPIN_REFERENCE_SPEED;
     }
 
     // Call inside shapeRenderer block in GameScreen.java

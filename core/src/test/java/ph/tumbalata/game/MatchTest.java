@@ -186,15 +186,43 @@ class MatchTest {
         throwRight(p(0), 50f);
         stepUntil(() -> match.mode() == Match.RoundMode.TAYA_TOSS, DT, 10f);
 
-        tayaPicksUpCan();
+        tayaPicksUpCan(); // Taya tosses from where the can stood
         Vector2 slipper = new Vector2(p(0).slipper.position);
-        match.taya().position.set(slipper.x + 200f, slipper.y);
         tossAt(slipper);
 
         stepUntil(() -> match.taya() == p(0), DT, 5f);
         assertEquals(Scoring.TOSS_HIT, p(1).score);
         assertSame(p(1), match.nextThrower(), "the old Taya throws first");
         assertEquals(Match.RoundMode.THROWING, match.mode());
+    }
+
+    @Test
+    void tayaCannotMoveWhileHoldingTheCanForTheToss() {
+        newMatch(2);
+        throwRight(p(0), 50f);
+        stepUntil(() -> match.mode() == Match.RoundMode.TAYA_TOSS, DT, 10f);
+        tayaPicksUpCan();
+
+        Vector2 before = new Vector2(match.taya().position);
+        walk(match.taya(), -1f, 1f);
+        assertEquals(before, match.taya().position, "frozen while holding the can");
+
+        pressA(match.taya(), DT);
+        walk(match.taya(), -1f, 1f);
+        assertEquals(before, match.taya().position, "frozen while aiming");
+    }
+
+    @Test
+    void tayaCanWalkWhileCarryingTheCanBackInTheScramble() {
+        newMatch(2);
+        throwRight(p(0), 90f);
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
+        stepFor(3f);
+        tayaPicksUpCan();
+
+        Vector2 before = new Vector2(match.taya().position);
+        walk(match.taya(), -1f, 0.5f);
+        assertTrue(match.taya().position.x < before.x - 50f);
     }
 
     @Test
@@ -233,12 +261,20 @@ class MatchTest {
         assertEquals(Scoring.KNOCK_CAN, p(0).score);
     }
 
+    /** P1 knocks the can over, everything settles, and P1 picks their slipper back up. */
+    private void knockCanAndPickUpSlipper() {
+        throwRight(p(0), 90f);
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
+        stepFor(3f); // let the can and slipper settle
+        p(0).position.set(p(0).slipper.position);
+        pressB(p(0));
+        assertTrue(p(0).hasSlipper);
+    }
+
     @Test
     void tayaTagsThrowerPastTheLineOnlyOnceTheCanIsBackOnBase() {
         newMatch(2);
-        throwRight(p(0), 90f);
-        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
-        stepFor(3f); // let the can settle
+        knockCanAndPickUpSlipper();
 
         Vector2 outside = new Vector2(Match.THROW_LINE_X + 200f, 200f);
         p(0).position.set(outside);
@@ -257,11 +293,26 @@ class MatchTest {
     }
 
     @Test
-    void throwerBehindTheLineIsSafe() {
+    void throwerWithoutTheirSlipperCannotBeTagged() {
         newMatch(2);
         throwRight(p(0), 90f);
         stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
         stepFor(3f);
+        tayaPicksUpCan();
+        tayaPutsCanBack();
+
+        Vector2 outside = new Vector2(Match.THROW_LINE_X + 200f, 200f);
+        p(0).position.set(outside);
+        match.taya().position.set(outside);
+        step(DT);
+        assertFalse(p(0).hasSlipper);
+        assertSame(p(1), match.taya(), "no slipper in hand: cannot be tagged");
+    }
+
+    @Test
+    void throwerBehindTheLineIsSafe() {
+        newMatch(2);
+        knockCanAndPickUpSlipper();
         tayaPicksUpCan();
         tayaPutsCanBack();
 

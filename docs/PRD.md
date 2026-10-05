@@ -33,9 +33,9 @@ Throwers try to knock down a can with their slippers (the pambato); one Taya gua
 1. Every round starts with all Throwers behind the line holding their slipper. They throw one at a time in turn order (P1, P2, P3; the first thrower rotates each round).
 2. While nobody has hit the can, slippers stay where they land: Throwers who missed may roam but cannot pick up their slipper, and nobody can be tagged.
 3. **Hit:** a slipper that passes within 25 px of the standing can knocks it down and starts the scramble. Throwers who already threw fetch their own slipper; Throwers who have not thrown yet may still throw (and knock the can down again once Taya stands it back up). Taya picks up the can and puts it back on its base.
-4. **Everyone missed:** once all slippers have stopped, Taya picks up the can, aims, sets power and tosses it at the slippers. A can that lands within 30 px of a slipper makes that slipper's owner the new Taya.
+4. **Everyone missed:** once all slippers have stopped, Taya picks up the can and must stay on that spot: Taya cannot move from picking up the can until it is tossed, so the toss always leaves from where the can stood. A can that lands within 30 px of a slipper makes that slipper's owner the new Taya. The can only hops a little when it lands (bounce 0.2).
 5. **Toss missed:** the scramble starts: Throwers may now pick up their slippers and run home while Taya fetches the can and puts it back on its base.
-6. **Tag:** during the scramble, once the can stands upright on its base (within 10 px), Taya can tag any Thrower past the throw line (within 30 px). Behind the line is safe. The tagged Thrower becomes Taya.
+6. **Tag:** during the scramble, once the can stands upright on its base (within 10 px), Taya can tag a Thrower who is past the throw line **and holding their slipper** (within 30 px). A Thrower without their slipper cannot be tagged; once picked up, a slipper cannot be put down, so the only way to be safe again is to cross back behind the line. The tagged Thrower becomes Taya.
 7. After a swap, the old Taya becomes a Thrower and throws first in the new round.
 8. The round ends when every Thrower is back behind the line holding their own slipper; the next round starts with the same Taya.
 
@@ -66,7 +66,7 @@ The 2-player game loop and all menu screens work. The newest piece, the 4-slot c
 | Can and slipper physics and wall collision | Working | Swept collision, exact can landing, tuned throw distance |
 | Main menu with live background | Working | Real map with 4 characters walking behind the menu |
 | Player count screen (3P / 4P) | Working | Real buttons; choice only affects the victory screen today |
-| Character select (4 cards) | Working, placeholder art | Only Player 1's colour tint is applied in the game |
+| Character select (4 cards) | Working, placeholder art | Each player has their own cursor; a character can only be locked by one player ("TAKEN") |
 | Victory podium | Working, placeholder art | Uses random scores; winner in the middle and largest |
 | Match timer | Working | 40 s test value |
 | Screen transition (can sweep) | Working | Mask wipe, 8-frame sheet, 1.4 s |
@@ -334,6 +334,6 @@ The scoring rules and the 3 to 4 player rules block the most work, so they come 
 | 3 | Should the Thrower be free to roam the whole arena after throwing? | Needed to fix the throw-line bounds | Yes, only until the round resets |
 | 4 | Keep menus at 700 x 500 or switch to 960 x 540 (16:9)? | Decides the size of all menu art | 700 x 500 stays in the code |
 | 5 | Match length: one timer, or best of N rounds? What is the final length? | Replaces the 40 s test timer | One 40 s timer |
-| 6 | Does each player pick their own character, and may two players pick the same one? | Changes the character select screen | **Decided:** every player picks with their own cursor and locks in with A; duplicates allowed |
+| 6 | Does each player pick their own character, and may two players pick the same one? | Changes the character select screen | **Decided:** every player picks with their own cursor and locks in with A; a character already locked by another player cannot be picked |
 | 7 | Are all four controllers the same model? | If not, each needs its own button profile | Same model, one default profile |
 | 8 | Which platforms must it run on, and what is the delivery format (jar, Windows exe)? | Affects packaging and testing | Windows only |

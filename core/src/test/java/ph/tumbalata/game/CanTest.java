@@ -74,6 +74,33 @@ class CanTest {
     }
 
     @Test
+    void spinAnimationIsProportionalToSpeed() {
+        Can can = new Can(0, 0);
+        can.velocity.set(Can.SPIN_REFERENCE_SPEED, 0);
+        assertEquals(1f, can.spinRate(), 0.001f, "normal speed at the reference speed");
+
+        can.velocity.set(Can.SPIN_REFERENCE_SPEED / 2f, 0);
+        assertEquals(0.5f, can.spinRate(), 0.001f, "half speed spins half as fast");
+
+        can.velocity.set(0, 0);
+        assertEquals(0f, can.spinRate(), 0f, "a still can does not spin");
+    }
+
+    @Test
+    void bounceIsSmall() {
+        Can can = thrownCan(300, 0, 70);
+        float maxBounceHeight = 0f;
+        boolean landed = false;
+        for (int i = 0; i < 60 * 5; i++) {
+            float zBefore = can.zPosition;
+            can.update(1f / 60f, -FAR, -FAR, FAR, FAR);
+            if (zBefore > 0 && can.zPosition == 0) landed = true;
+            if (landed) maxBounceHeight = Math.max(maxBounceHeight, can.zPosition);
+        }
+        assertTrue(maxBounceHeight < 10f, "bounces stay low after landing, got " + maxBounceHeight);
+    }
+
+    @Test
     void resetStandsTheCanUp() {
         Can can = thrownCan(300, 0, 70);
         can.update(1f / 60f, -FAR, -FAR, FAR, FAR);

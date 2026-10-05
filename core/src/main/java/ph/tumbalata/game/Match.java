@@ -247,9 +247,12 @@ public class Match {
     }
 
     private void handleInput(float delta) {
-        // --- Movement: everyone, except a Thrower who is aiming (Taya can walk while aiming) ---
+        // --- Movement: everyone, except a Thrower who is aiming and Taya holding the can for the toss ---
         for (Player p : players) {
-            if (p == aimer && p != taya) continue;
+            if (isFrozen(p)) {
+                p.stop();
+                continue;
+            }
             p.handleInput(delta);
         }
 
@@ -301,6 +304,15 @@ public class Match {
                 break;
             }
         }
+    }
+
+    /**
+     * A Thrower stands still while aiming. Taya stands still from picking up the can for the toss until throwing it,
+     * so the toss always leaves from where the can was picked up.
+     */
+    public boolean isFrozen(Player p) {
+        if (p == taya) return mode == RoundMode.TAYA_TOSS && taya.hasCan;
+        return p == aimer;
     }
 
     private void startAim(Player p) {
@@ -423,12 +435,17 @@ public class Match {
         events.scored(p, points);
     }
 
-    /** Once the can stands on its base again, Taya can tag any Thrower past the line. */
+    /** A Thrower can be tagged while holding their slipper past the line. Only crossing back over the line is safe. */
+    public boolean isTaggable(Player p) {
+        return p != taya && p.hasSlipper && p.position.x > THROW_LINE_X;
+    }
+
+    /** Once the can stands on its base again, Taya can tag a taggable Thrower. */
     private void checkTagging() {
         if (!isCanStandingOnBase()) return;
 
         for (Player p : players) {
-            if (p == taya || p.position.x <= THROW_LINE_X) continue;
+            if (!isTaggable(p)) continue;
             if (taya.position.dst(p.position) < TAG_DISTANCE) {
                 award(taya, Scoring.TAG);
                 events.tagged(taya, p);

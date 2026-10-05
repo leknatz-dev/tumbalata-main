@@ -50,7 +50,7 @@ public class GameScreen implements Screen {
     private static final float NAME_TAG_Y = 34f;
 
     // --- MATCH ---
-    private static final float MATCH_TIME_SECONDS = 40f;
+    private static final float MATCH_TIME_SECONDS = 60f;
     private static final int VICTORY_WINDOW_W = 700;
     private static final int VICTORY_WINDOW_H = 500;
 
@@ -376,7 +376,7 @@ public class GameScreen implements Screen {
             case SCRAMBLE:
             default:
                 return match.isCanStandingOnBase()
-                    ? "The can is up: Taya can tag anyone past the line!"
+                    ? "The can is up: Taya can tag anyone past the line with a slipper!"
                     : "Grab your slipper and get back behind the line!";
         }
     }

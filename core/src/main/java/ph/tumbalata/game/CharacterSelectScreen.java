@@ -19,7 +19,8 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 
 /**
  * "Choose your character" screen: 4 placeholder cards. Every player moves their own cursor with their own pad or keys
- * and locks in with A (B to change their mind). The game starts when everyone is locked in. Duplicates are allowed.
+ * and locks in with A (B to change their mind). The game starts when everyone is locked in. A character can only be
+ * locked by one player; others can still hover over it.
  * The mouse drives Player 1's cursor.
  */
 public class CharacterSelectScreen implements Screen {
@@ -81,6 +82,10 @@ public class CharacterSelectScreen implements Screen {
     private final Rectangle[] cardBounds = new Rectangle[Characters.COUNT];
     private final int[] cursor;      // cursor[player] = card that player is on
     private final boolean[] locked;  // locked[player] = player has confirmed their pick
+
+    private static final float TAKEN_MESSAGE_SECONDS = 1.5f;
+    private String takenMessage = "";
+    private float takenMessageTime = 0f;
     private float time = 0f;
     private boolean leaving = false;
     private final Vector2 mouse = new Vector2();
@@ -92,6 +97,23 @@ public class CharacterSelectScreen implements Screen {
         this.cursor = new int[playerCount];
         this.locked = new boolean[playerCount];
         for (int p = 0; p < playerCount; p++) cursor[p] = p % Characters.COUNT; // everyone starts on a different card
+    }
+
+    /** Player who has locked in on this card, or -1. Each character can only be locked by one player. */
+    private int lockedBy(int card) {
+        for (int p = 0; p < playerCount; p++) if (locked[p] && cursor[p] == card) return p;
+        return -1;
+    }
+
+    /** Locks player p on their card, unless someone else already has it (then shows a short "taken" message). */
+    private void tryLock(int p) {
+        int owner = lockedBy(cursor[p]);
+        if (owner >= 0 && owner != p) {
+            takenMessage = "P" + (p + 1) + ": " + Characters.NAMES[cursor[p]] + " IS TAKEN BY P" + (owner + 1);
+            takenMessageTime = TAKEN_MESSAGE_SECONDS;
+            return;
+        }
+        locked[p] = true;
     }
 
     private boolean anyCursorOn(int card) {
@@ -134,6 +156,7 @@ public class CharacterSelectScreen implements Screen {
     @Override
     public void render(float delta) {
         time += delta;
+        takenMessageTime = Math.max(0f, takenMessageTime - delta);
         handleInput();
 
         ScreenUtils.clear(0.1f, 0.1f, 0.12f, 1f);
@@ -213,6 +236,15 @@ public class CharacterSelectScreen implements Screen {
             }
             layout.setText(font, Characters.NAMES[i]);
             font.draw(batch, Characters.NAMES[i], r.x + (r.width - layout.width) / 2f, r.y + 22f);
+
+            int owner = lockedBy(i);
+            if (owner >= 0) { // "TAKEN" in the owner's colour across the card
+                String taken = "TAKEN";
+                layout.setText(font, taken);
+                font.setColor(Player.SLOT_COLORS[owner]);
+                font.draw(batch, taken, r.x + (r.width - layout.width) / 2f, r.y + r.height / 2f);
+                font.setColor(Color.WHITE);
+            }
         }
 
         for (int p = 0; p < playerCount; p++) {
@@ -223,7 +255,9 @@ public class CharacterSelectScreen implements Screen {
         }
         font.setColor(Color.WHITE);
 
-        String hint = allLocked() ? "GET READY!" : "MOVE TO CHOOSE   A: LOCK IN   B: CHANGE";
+        String hint = allLocked() ? "GET READY!"
+            : takenMessageTime > 0f ? takenMessage
+            : "MOVE TO CHOOSE   A: LOCK IN   B: CHANGE";
         layout.setText(font, hint);
         font.draw(batch, hint, (MENU_WIDTH - layout.width) / 2f, HINT_Y);
 
@@ -266,7 +300,7 @@ public class CharacterSelectScreen implements Screen {
             }
             if (pin.leftPressed) cursor[p] = (cursor[p] + Characters.COUNT - 1) % Characters.COUNT;
             if (pin.rightPressed) cursor[p] = (cursor[p] + 1) % Characters.COUNT;
-            if (pin.aPressed || pin.startPressed) locked[p] = true;
+            if (pin.aPressed || pin.startPressed) tryLock(p);
             else if (pin.bPressed) back = true; // B with nothing to cancel goes back a screen
         }
 
@@ -291,7 +325,7 @@ public class CharacterSelectScreen implements Screen {
             if (hovered != -1 && mouseMoved) cursor[0] = hovered;
             if (Gdx.input.justTouched() && hovered != -1) {
                 cursor[0] = hovered;
-                locked[0] = true;
+                tryLock(0);
             }
         }
 
