@@ -242,6 +242,19 @@ All assets live in the `assets/` folder and are loaded by file name, which is ca
 
 Per-character sprite sheets do not exist yet: the four characters are currently one walk sheet with a colour tint (see Characters in the architecture section).
 
+## Pop-up signs
+
+Big signs pop up in the middle of the match screen (class `Signs`): they pop in, hold, then fade out, one at a time. Until an image exists, the sign's text is drawn as big outlined placeholder text. To use real art, add a PNG with the name below to `assets/signs/`; it is drawn centred at its own size (`Signs.IMAGE_SCALE` to scale it). Display times are in the `Signs.Sign` list.
+
+| File (`assets/signs/`) | Placeholder text | When it shows |
+| --- | --- | --- |
+| `game_start.png` | GAME START! | After the screen transition into the match. The match (and its timer) waits until the sign is gone. |
+| `run.png` | RUN! | The can is knocked down while a Thrower is past the line, or Taya's toss misses |
+| `haha.png` | HAHA! | The can is knocked down and every Thrower is safe behind the line |
+| `my_turn.png` | MY TURN! | Everyone missed: Taya's turn to toss the can |
+| `gotcha.png` | GOTCHA! | Taya's tossed can lands on a slipper |
+| `good_job.png` | GOOD JOB! | Time is up (with the whistle); the victory screen follows when the sign is gone |
+
 ## Audio
 
 All sound goes through one `Audio` class, created once by `TumbalataGame` (`game.audio()`). Screens call `play(Audio.Sfx.X)` for effects and `playMusic(Audio.Track.X)` for music; music fades between tracks, and asking for the track that is already playing does nothing, so the menu music carries on across the menus. **M** mutes and unmutes anywhere. Master, music and effects volume and mute are saved in Preferences (`tumbalata`), ready for a settings screen.

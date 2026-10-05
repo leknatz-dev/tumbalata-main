@@ -23,6 +23,13 @@ public class Match {
     public static final float CAN_BASE_X = WORLD_WIDTH * 0.8f;
     public static final float CAN_BASE_Y = WORLD_HEIGHT * 0.5f;
 
+    // Hard limits for player movement. The map's collision1 walls are the real court edges; these only stop players
+    // walking off the art. The bottom limit is below the court's bottom wall (about y -44) so the walls decide there.
+    public static final float PLAY_MIN_X = 20f;
+    public static final float PLAY_MAX_X = WORLD_WIDTH - 20f;
+    public static final float PLAY_MIN_Y = -54f;   // the art starts at y -64
+    public static final float PLAY_MAX_Y = WORLD_HEIGHT - 20f;
+
     // Safety-net limits far outside the art (the view is x 0..1408, y -64..704)
     private static final float OUTER_MIN_X = -256f;
     private static final float OUTER_MIN_Y = -320f;
@@ -90,6 +97,10 @@ public class Match {
         default void scored(Player player, int points) {}
         default void slipperThrown(Player thrower) {}
         default void canTossed(Player taya) {}
+        /** Everyone missed: it is Taya's turn to toss the can. */
+        default void tayaTossTurn(Player taya) {}
+        /** Taya's can stopped without hitting a slipper: the scramble starts. */
+        default void tossMissed(Player taya) {}
         default void canKnocked(Player thrower) {}
         default void tagged(Player taya, Player victim) {}
         default void tossHitSlipper(Player taya, Player victim) {}
@@ -362,6 +373,7 @@ public class Match {
                 // Everyone threw, nothing hit the can: Taya's turn to toss
                 if (nextThrower() == null && aim == Aim.NONE && allSlippersStopped()) {
                     mode = RoundMode.TAYA_TOSS;
+                    events.tayaTossTurn(taya);
                 }
                 break;
 
@@ -389,6 +401,7 @@ public class Match {
                     }
                     if (can.velocity.len() == 0) {
                         mode = RoundMode.SCRAMBLE; // missed: grab your slippers and run!
+                        events.tossMissed(taya);
                     }
                 }
                 break;
@@ -437,6 +450,14 @@ public class Match {
         events.scored(p, points);
     }
 
+    /** True if any Thrower is past the throw line right now. */
+    public boolean isAnyThrowerPastLine() {
+        for (Player p : players) {
+            if (p != taya && p.position.x > THROW_LINE_X) return true;
+        }
+        return false;
+    }
+
     /** A Thrower can be tagged while holding their slipper past the line. Only crossing back over the line is safe. */
     public boolean isTaggable(Player p) {
         return p != taya && p.hasSlipper && p.position.x > THROW_LINE_X;
@@ -473,7 +494,7 @@ public class Match {
 
     private void launchSlipper(Player p) {
         // Once their slipper is thrown, a Thrower may cross the line (until the round resets)
-        p.setXBounds(EDGE_MARGIN, WORLD_WIDTH - EDGE_MARGIN);
+        p.setXBounds(PLAY_MIN_X, PLAY_MAX_X);
         p.hasThrown = true;
         p.hasSlipper = false;
 
@@ -561,7 +582,7 @@ public class Match {
         // Throwers in turn order: the first one at the line, the rest on the waiting spots behind it
         for (int i = 0; i < roster.throwers().size; i++) {
             Player p = players.get(roster.throwers().get(i));
-            p.setXBounds(EDGE_MARGIN, THROW_LINE_X - EDGE_MARGIN);
+            p.setXBounds(PLAY_MIN_X, THROW_LINE_X - EDGE_MARGIN);
             p.hasSlipper = true;
             p.hasThrown = false;
             p.hasCan = false;
@@ -574,7 +595,7 @@ public class Match {
             p.slipper.reset(p.position.x, p.position.y);
         }
 
-        taya.setXBounds(EDGE_MARGIN, WORLD_WIDTH - EDGE_MARGIN);
+        taya.setXBounds(PLAY_MIN_X, PLAY_MAX_X);
         taya.position.set(canBase.x + TAYA_SPAWN_RIGHT_OF_BASE, canBase.y);
         taya.hasCan = false;
         taya.hasSlipper = false;

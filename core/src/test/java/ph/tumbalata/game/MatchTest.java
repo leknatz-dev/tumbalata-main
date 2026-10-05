@@ -23,7 +23,7 @@ class MatchTest {
         players = new Array<>();
         for (int id = 0; id < playerCount; id++) {
             Player p = new Player(id, 0, 0f, 0f, GameConstants.PLAYER_SPEED, new PlayerInput(),
-                20f, Match.WORLD_WIDTH - 20f, 20f, Match.WORLD_HEIGHT - 20f, null, null, null);
+                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y, null, null, null);
             p.slipper = new Slipper(0f, 0f);
             players.add(p);
         }
@@ -368,6 +368,43 @@ class MatchTest {
         throwRight(p(0), 90f);
         stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
         assertEquals(Scoring.KNOCK_CAN, reported[0]);
+    }
+
+    @Test
+    void signEventsFireForTossTurnAndMissedToss() {
+        newMatch(2);
+        StringBuilder log = new StringBuilder();
+        match.setEvents(new Match.Events() {
+            @Override public void tayaTossTurn(Player taya) { log.append("turn "); }
+            @Override public void tossMissed(Player taya) { log.append("missed "); }
+            @Override public void canKnocked(Player thrower) { log.append("knocked "); }
+        });
+        throwRight(p(0), 50f);
+        stepUntil(() -> match.mode() == Match.RoundMode.TAYA_TOSS, DT, 10f);
+        tayaPicksUpCan();
+        tossAt(new Vector2(match.taya().position).add(0f, 150f));
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 5f);
+        assertEquals("turn missed ", log.toString());
+    }
+
+    @Test
+    void anyThrowerPastLineDecidesRunOrHaha() {
+        newMatch(2);
+        assertFalse(match.isAnyThrowerPastLine(), "everyone starts behind the line");
+        throwRight(p(0), 50f);
+        walk(p(0), 1f, 1.5f);
+        assertTrue(match.isAnyThrowerPastLine());
+    }
+
+    @Test
+    void playersCanReachTheBottomOfTheCourt() {
+        newMatch(2);
+        Player taya = match.taya();
+        taya.input.moveY = -1f;
+        stepFor(4f);
+        taya.input.moveY = 0f;
+        assertEquals(Match.PLAY_MIN_Y, taya.position.y, 0.01f, "only the walls (or the art edge) stop players now");
+        assertTrue(taya.position.y < 0f, "below the old y=20 limit");
     }
 
     @Test

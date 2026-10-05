@@ -77,6 +77,11 @@ public class TumbalataGame extends Game {
     private Screen pendingScreen;
     private int pendingW, pendingH;
 
+    /** True while a screen change is pending or its can sweep is still playing. */
+    public boolean isTransitioning() {
+        return transition.isActive() || pendingScreen != null;
+    }
+
     /**
      * Switches screens with the can sweep. Requests made while a transition is already playing are ignored.
      * The window is resized to width x height ONLY if it is untouched (not fullscreen, not maximized/resized by hand),

@@ -85,8 +85,14 @@ public class GameScreen implements Screen {
     private final int[] characters;                        // characters[playerId] = picked character
     private final Array<Player> drawOrder = new Array<>(); // players sorted back to front each frame
     private Match match;
-    private boolean matchEnded = false;
     private Audio audio;
+    private TumbalataGame game;
+    private Signs signs;
+
+    /** INTRO: waiting for the transition + "GAME START!" sign. OUTRO: "GOOD JOB!" before the victory screen. */
+    private enum Stage { INTRO, PLAYING, OUTRO, DONE }
+    private Stage stage = Stage.INTRO;
+    private boolean introSignShown = false;
 
     private static final class Popup {
         Player player;
@@ -142,7 +148,7 @@ public class GameScreen implements Screen {
         for (int id = 0; id < characters.length; id++) {
             // Position, speed and bounds are set by the match from the player's role
             Player p = new Player(id, characters[id], 0f, 0f, GameConstants.PLAYER_SPEED, inputs.player(id),
-                20f, Match.WORLD_WIDTH - 20f, 20f, Match.WORLD_HEIGHT - 20f,
+                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y,
                 playerSheet, playerSlipperSheet, playerCanSheet);
             p.slipper = new Slipper(0f, 0f);
             p.slipper.color.set(Color.BROWN).lerp(p.slotColor(), 0.5f);
@@ -150,9 +156,10 @@ public class GameScreen implements Screen {
             drawOrder.add(p);
         }
 
-        audio = ((TumbalataGame) Gdx.app.getApplicationListener()).audio();
-        audio.play(Audio.Sfx.GAME_START);
+        game = (TumbalataGame) Gdx.app.getApplicationListener();
+        audio = game.audio();
         audio.playMusic(Audio.Track.GAME);
+        signs = new Signs();
 
         match = new Match(players, can, playerWalls, canBlockers, MATCH_TIME_SECONDS);
         match.setEvents(new Match.Events() {
@@ -178,11 +185,24 @@ public class GameScreen implements Screen {
             @Override
             public void canKnocked(Player thrower) {
                 audio.playVaried(Audio.Sfx.CAN_HIT);
+                // Someone is out past the line: they have to run. Everyone is safe behind it: laugh at Taya.
+                signs.show(match.isAnyThrowerPastLine() ? Signs.Sign.RUN : Signs.Sign.HAHA);
+            }
+
+            @Override
+            public void tayaTossTurn(Player taya) {
+                signs.show(Signs.Sign.MY_TURN);
+            }
+
+            @Override
+            public void tossMissed(Player taya) {
+                signs.show(Signs.Sign.RUN);
             }
 
             @Override
             public void tossHitSlipper(Player taya, Player victim) {
                 audio.playVaried(Audio.Sfx.CAN_HIT);
+                signs.show(Signs.Sign.GOTCHA);
             }
 
             @Override
@@ -207,9 +227,35 @@ public class GameScreen implements Screen {
         viewport.apply();
 
         handleScreenKeys();
-        if (!matchEnded) {
-            match.update(delta);
-            if (match.isOver()) endMatch();
+        signs.update(delta);
+        switch (stage) {
+            case INTRO:
+                // Wait for the screen transition, then "GAME START!"; the match starts when the sign is gone
+                if (!introSignShown && !game.isTransitioning()) {
+                    introSignShown = true;
+                    signs.show(Signs.Sign.GAME_START);
+                    audio.play(Audio.Sfx.GAME_START);
+                } else if (introSignShown && !signs.isShowing()) {
+                    stage = Stage.PLAYING;
+                }
+                break;
+            case PLAYING:
+                match.update(delta);
+                if (match.isOver()) {
+                    stage = Stage.OUTRO;
+                    signs.show(Signs.Sign.GOOD_JOB);
+                    audio.play(Audio.Sfx.GAME_END);
+                    audio.stopMusic();
+                }
+                break;
+            case OUTRO:
+                if (!signs.isShowing()) {
+                    stage = Stage.DONE;
+                    endMatch();
+                }
+                break;
+            case DONE:
+                break;
         }
         for (int i = popups.size - 1; i >= 0; i--) {
             popups.get(i).age += delta;
@@ -280,6 +326,7 @@ public class GameScreen implements Screen {
         drawPrompts();
         drawPopups();
         drawHud();
+        signs.draw(spriteBatch, VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f + 40f);
 
         spriteBatch.end();
 
@@ -311,10 +358,8 @@ public class GameScreen implements Screen {
         }
     }
 
+    /** Time is up and the "GOOD JOB!" sign has played: on to the victory screen. */
     private void endMatch() {
-        matchEnded = true;
-        audio.play(Audio.Sfx.GAME_END);
-        audio.stopMusic();
         if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
             TumbalataGame tumbalata = (TumbalataGame) Gdx.app.getApplicationListener();
             tumbalata.changeScreen(new VictoryScreen(tumbalata, match.scores(), characters),
@@ -467,7 +512,8 @@ public class GameScreen implements Screen {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
 
         shapeRenderer.setColor(Color.WHITE);
-        shapeRenderer.rect(0f, 0f, Match.WORLD_WIDTH, Match.WORLD_HEIGHT);
+        // player movement limits (the collision1 walls are the real court edges)
+        shapeRenderer.rect(Match.PLAY_MIN_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_X - Match.PLAY_MIN_X, Match.PLAY_MAX_Y - Match.PLAY_MIN_Y);
         shapeRenderer.setColor(Color.MAGENTA);
         shapeRenderer.rect(ringX, ringY,
             upperRingTexture.getWidth(),
@@ -541,5 +587,6 @@ public class GameScreen implements Screen {
         if (playerSlipperSheet != null) playerSlipperSheet.dispose();
         if (playerCanSheet != null) playerCanSheet.dispose();
         if (canSheet != null) canSheet.dispose();
+        if (signs != null) signs.dispose();
     }
 }
