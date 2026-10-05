@@ -20,9 +20,12 @@ import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Shape2D;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
+import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+
+import java.util.Comparator;
 
 public class GameScreen implements Screen {
     public static final float WORLD_WIDTH = 1280f;
@@ -93,15 +96,22 @@ public class GameScreen implements Screen {
     private MapCollision canWalls;
     private MapCollision canBlockers;
 
-    private final Vector2 prevThrowerPos = new Vector2();
-    private final Vector2 prevTayaPos = new Vector2();
     private boolean debugCollision = false;
     private int debugView = 0;
     private float ringX = RING_X;
     private float ringY = RING_Y;
 
-    private int playerCount = 3;
-    private int characterIndex = 0;
+    // --- PLAYERS ---
+    // Spawn spots, relative to the throw line / can base. Waiting Throwers stand behind the active one.
+    private static final float THROWER_SPAWN_BEHIND_LINE = 50f;
+    private static final float TAYA_SPAWN_RIGHT_OF_BASE = 80f;
+    private static final float[][] WAITING_THROWER_OFFSETS = { { -130f, 90f }, { -130f, -90f }, { -200f, 0f } };
+    private static final float NAME_TAG_Y = 34f;
+
+    private final int[] characters;                       // characters[playerId] = picked character
+    private final Array<Player> players = new Array<>();  // index = player id (0 = Player 1)
+    private final Array<Player> drawOrder = new Array<>(); // same players, sorted back to front each frame
+    private Roster roster;
 
     // --- MATCH TIMER ---
     private static final float MATCH_TIME_SECONDS = 40f;
@@ -110,7 +120,6 @@ public class GameScreen implements Screen {
     private float matchTimeLeft = MATCH_TIME_SECONDS;
     private boolean matchOver = false;
 
-    private final int[] scores = new int[4];
     private boolean fakeScoresForTesting = true;
 
     private enum GamePhase {
@@ -129,6 +138,7 @@ public class GameScreen implements Screen {
 
     private float throwLineX, screenWidth, screenHeight;
     private Vector2 canBasePosition;
+    // Shortcuts to the players in the two active roles, refreshed by applyRoles() from the roster
     private Player thrower;
     private Player taya;
     private Can can;
@@ -141,17 +151,15 @@ public class GameScreen implements Screen {
     private boolean isImpactPending = false;
     private float impactDelayTimer = 0f;
 
-    public GameScreen() {
-        this(3, 0);
-    }
-
-    public GameScreen(int playerCount) {
-        this(playerCount, 0);
-    }
-
-    public GameScreen(int playerCount, int characterIndex) {
-        this.playerCount = playerCount;
-        this.characterIndex = MathUtils.clamp(characterIndex, 0, Characters.COUNT - 1);
+    /** @param characters one picked character per player (2 to 4 players); characters[0] is Player 1's */
+    public GameScreen(int[] characters) {
+        if (characters.length < 2 || characters.length > InputManager.MAX_PLAYERS) {
+            throw new IllegalArgumentException("2 to " + InputManager.MAX_PLAYERS + " players, got " + characters.length);
+        }
+        this.characters = new int[characters.length];
+        for (int i = 0; i < characters.length; i++) {
+            this.characters[i] = MathUtils.clamp(characters[i], 0, Characters.COUNT - 1);
+        }
     }
 
     @Override
@@ -201,35 +209,38 @@ public class GameScreen implements Screen {
         can = new Can(canBasePosition.x, canBasePosition.y, canSheet, 4, 1, 0.08f);
         slipper = new Slipper(throwLineX - 50, canBasePosition.y);
 
-        thrower = new Player(
-            throwLineX - 50f,
-            canBasePosition.y,
-            GameConstants.PLAYER_SPEED,
-            inputs.player(0),
-            20f, throwLineX - 20f, 20f, screenHeight - 20f,
-            playerSheet, playerSlipperSheet, playerCanSheet
-        );
-        thrower.hasSlipper = false;
+        roster = new Roster(characters.length);
+        for (int id = 0; id < characters.length; id++) {
+            // Position, speed and bounds are set by resetRound() below, from the player's role
+            Player p = new Player(id, characters[id], 0f, 0f, GameConstants.PLAYER_SPEED, inputs.player(id),
+                20f, screenWidth - 20f, 20f, screenHeight - 20f,
+                playerSheet, playerSlipperSheet, playerCanSheet);
+            players.add(p);
+            drawOrder.add(p);
+        }
+        resetRound(false);
+    }
 
-        taya = new Player(
-            canBasePosition.x + 80f,
-            canBasePosition.y,
-            GameConstants.TAYA_SPEED,
-            inputs.player(1),
-            20f, screenWidth - 20f, 20f, screenHeight - 20f,
-            playerSheet, playerSlipperSheet, playerCanSheet
-        );
+    /** Points the thrower / taya shortcuts at the roster's players and gives every player their role's speed. */
+    private void applyRoles() {
+        thrower = players.get(roster.activeThrower());
+        taya = players.get(roster.taya());
+        for (Player p : players) {
+            p.speed = roster.isTaya(p.id) ? GameConstants.TAYA_SPEED : GameConstants.PLAYER_SPEED;
+        }
+    }
 
-        thrower.tint.set(Characters.TINTS[characterIndex]);
+    private boolean isWaitingThrower(Player p) {
+        return p != thrower && p != taya;
     }
 
     private void savePreviousPositions() {
-        prevThrowerPos.set(thrower.position);
-        prevTayaPos.set(taya.position);
+        for (Player p : players) p.prevPosition.set(p.position);
     }
 
-    private void resolvePlayerCollision(Player p, Vector2 prev) {
-        playerWalls.slide(p.position, prev.x, prev.y, PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
+    private void resolvePlayerCollision(Player p) {
+        playerWalls.slide(p.position, p.prevPosition.x, p.prevPosition.y,
+            PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
     }
 
     private void updateCan(float delta) {
@@ -292,8 +303,7 @@ public class GameScreen implements Screen {
         }
 
         can.renderShadow(shapeRenderer);
-        thrower.renderShadow(shapeRenderer);
-        taya.renderShadow(shapeRenderer);
+        for (Player p : players) p.renderShadow(shapeRenderer);
 
         if (!thrower.hasSlipper) {
             slipper.render(shapeRenderer);
@@ -303,8 +313,9 @@ public class GameScreen implements Screen {
 
         spriteBatch.begin();
 
-        thrower.render(spriteBatch);
-        taya.render(spriteBatch);
+        // Back to front: players higher on the court are further away and drawn first
+        drawOrder.sort(BACK_TO_FRONT);
+        for (Player p : drawOrder) p.render(spriteBatch);
 
         if (taya.hasCan) {
             TextureRegion canFrame = can.getCurrentFrame();
@@ -327,6 +338,8 @@ public class GameScreen implements Screen {
         }
 
         spriteBatch.draw(upperRingTexture, ringX, ringY);
+
+        drawNameTags();
 
         if (!thrower.hasSlipper && Vector2.dst(thrower.position.x, thrower.position.y, slipper.position.x, slipper.position.y) < 45f) {
             font.draw(spriteBatch, "[E] or [B] Pick Up Slipper", slipper.position.x - 45f, slipper.position.y + 25f);
@@ -362,6 +375,21 @@ public class GameScreen implements Screen {
         }
     }
 
+    private static final Comparator<Player> BACK_TO_FRONT = (a, b) -> Float.compare(b.position.y, a.position.y);
+
+    /** "P1" over each player in their slot colour; the Taya is marked, and waiting Throwers are dimmed. */
+    private void drawNameTags() {
+        font.getData().setScale(1f);
+        for (Player p : players) {
+            String text = (p == taya) ? p.label() + " TAYA" : p.label();
+            Color c = p.slotColor();
+            font.setColor(c.r, c.g, c.b, isWaitingThrower(p) ? 0.6f : 1f);
+            font.draw(spriteBatch, text, p.position.x - 50f, p.position.y + NAME_TAG_Y, 100f, Align.center, false);
+        }
+        font.getData().setScale(1.2f);
+        font.setColor(Color.WHITE);
+    }
+
     private void updateMatchTimer(float delta) {
         matchTimeLeft -= delta;
         if (matchTimeLeft <= 0f) {
@@ -372,18 +400,14 @@ public class GameScreen implements Screen {
     private void endMatch() {
         matchOver = true;
 
-        int[] finalScores = new int[playerCount];
-        for (int i = 0; i < playerCount; i++) {
-            if (fakeScoresForTesting) {
-                finalScores[i] = MathUtils.random(0, 20);
-            } else {
-                finalScores[i] = (i < scores.length) ? scores[i] : 0;
-            }
+        int[] finalScores = new int[players.size];
+        for (Player p : players) {
+            finalScores[p.id] = fakeScoresForTesting ? MathUtils.random(0, 20) : p.score;
         }
 
         if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
             TumbalataGame tumbalata = (TumbalataGame) Gdx.app.getApplicationListener();
-            tumbalata.changeScreen(new VictoryScreen(tumbalata, playerCount, finalScores, characterIndex),
+            tumbalata.changeScreen(new VictoryScreen(tumbalata, finalScores, characters),
                 VICTORY_WINDOW_W, VICTORY_WINDOW_H);
         }
     }
@@ -402,7 +426,9 @@ public class GameScreen implements Screen {
         if (Gdx.input.isKeyJustPressed(Input.Keys.F1)) debugCollision = !debugCollision;
         if (Gdx.input.isKeyJustPressed(Input.Keys.F2)) debugView = (debugView + 1) % 3;
 
-        if (debugCollision) {
+        // Ctrl + I/J/K/L nudges the ring (Ctrl, because I/J/K/L also move Player 3)
+        boolean ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) || Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT);
+        if (debugCollision && ctrl) {
             float step = (Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)) ? 10f : 1f;
             if (Gdx.input.isKeyJustPressed(Input.Keys.I)) ringY += step;
             if (Gdx.input.isKeyJustPressed(Input.Keys.K)) ringY -= step;
@@ -412,7 +438,10 @@ public class GameScreen implements Screen {
 
         // --- Movement (keyboard or controller, bounds + collision are handled the same for both) ---
         if (currentPhase == GamePhase.THROWER_ROAMING || currentPhase == GamePhase.CAN_HIT_SCRAMBLE || currentPhase == GamePhase.RETRIEVAL_PHASE) {
-            thrower.handleInput(delta);
+            // The active Thrower and the Throwers waiting their turn (who stay behind the line) move in the same phases
+            for (Player p : players) {
+                if (p != taya) p.handleInput(delta);
+            }
 
             // Thrower picks up the slipper: B
             if (throwerIn.bPressed && !thrower.hasSlipper) {
@@ -466,15 +495,19 @@ public class GameScreen implements Screen {
         }
 
         // Reset round: Select (any player's pad) or R
-        if (throwerIn.selectPressed || tayaIn.selectPressed) resetRound();
+        for (Player p : players) {
+            if (p.input.selectPressed) {
+                resetRound(false);
+                break;
+            }
+        }
     }
 
     private void update(float delta) {
-        thrower.update(delta);
-        taya.update(delta);
-
-        resolvePlayerCollision(thrower, prevThrowerPos);
-        resolvePlayerCollision(taya, prevTayaPos);
+        for (Player p : players) {
+            p.update(delta);
+            resolvePlayerCollision(p);
+        }
 
         if (currentPhase == GamePhase.THROWER_SELECTING_ANGLE) {
             angleTimer += delta * 3.5f;
@@ -500,7 +533,7 @@ public class GameScreen implements Screen {
             updateSlipper(delta);
 
             if (thrower.hasSlipper && thrower.position.x < throwLineX) {
-                resetRound();
+                resetRound(true);
                 return;
             }
 
@@ -514,7 +547,7 @@ public class GameScreen implements Screen {
                 if (impactDelayTimer >= 0.6f) {
                     isImpactPending = false;
                     impactDelayTimer = 0f;
-                    swapRoles();
+                    swapRoles(thrower); // Taya's can hit the active Thrower's slipper
                 }
                 return;
             }
@@ -532,7 +565,7 @@ public class GameScreen implements Screen {
             updateCan(delta);
 
             if (thrower.hasSlipper && thrower.position.x < throwLineX) {
-                resetRound();
+                resetRound(true);
                 return;
             }
 
@@ -542,24 +575,27 @@ public class GameScreen implements Screen {
 
     private void checkTaggingLogic() {
         boolean isCanStandingAtBase = !can.isHit && Vector2.dst(can.position.x, can.position.y, canBasePosition.x, canBasePosition.y) < 10f;
-        boolean isThrowerPastLine = thrower.position.x > throwLineX;
+        if (!isCanStandingAtBase) return;
 
-        if (isCanStandingAtBase && isThrowerPastLine) {
-            if (Vector2.dst(taya.position.x, taya.position.y, thrower.position.x, thrower.position.y) < 30f) {
-                swapRoles();
+        // Any Thrower past the line can be tagged (waiting Throwers are kept behind it, so in practice the active one)
+        for (Player p : players) {
+            if (p == taya || p.position.x <= throwLineX) continue;
+            if (Vector2.dst(taya.position.x, taya.position.y, p.position.x, p.position.y) < 30f) {
+                swapRoles(p);
+                return;
             }
         }
     }
 
-    private void swapRoles() {
-        Player temp = thrower;
-        thrower = taya;
-        taya = temp;
-
-        resetRound();
+    /** {@code newTaya} (a Thrower) becomes Taya; the old Taya becomes a Thrower and throws next. */
+    private void swapRoles(Player newTaya) {
+        roster.swapWithTaya(newTaya.id);
+        resetRound(false);
     }
 
     private void launchSlipper() {
+        // Once the slipper is thrown, the Thrower may cross the line to fetch it (until the round resets)
+        thrower.setXBounds(20, screenWidth - 20);
         slipper.position.set(thrower.position);
         float rad = currentAngle * MathUtils.degreesToRadians;
         float speed = currentPower * 18f;
@@ -613,17 +649,34 @@ public class GameScreen implements Screen {
         can.zVelocity = 120f;
     }
 
-    private void resetRound() {
+    /**
+     * Puts everyone back on their spawn spot for their role.
+     * @param nextTurn true when the round ended normally, so the next Thrower in line gets the turn
+     */
+    private void resetRound(boolean nextTurn) {
         currentPhase = GamePhase.THROWER_ROAMING;
 
-        thrower.setXBounds(20, throwLineX - 20);
+        if (nextTurn) roster.nextTurn();
+        applyRoles();
+
+        // Throwers in turn order: the active one at the line, the rest on the waiting spots behind it
+        for (int i = 0; i < roster.throwers().size; i++) {
+            Player p = players.get(roster.throwers().get(i));
+            p.setXBounds(20, throwLineX - 20);
+            p.hasSlipper = false;
+            p.hasCan = false;
+            if (i == 0) {
+                p.position.set(throwLineX - THROWER_SPAWN_BEHIND_LINE, screenHeight * 0.5f);
+            } else {
+                float[] spot = WAITING_THROWER_OFFSETS[(i - 1) % WAITING_THROWER_OFFSETS.length];
+                p.position.set(throwLineX - THROWER_SPAWN_BEHIND_LINE + spot[0], screenHeight * 0.5f + spot[1]);
+            }
+        }
+
         taya.setXBounds(20, screenWidth - 20);
-
-        thrower.position.set(throwLineX - 50f, screenHeight * 0.5f);
-        thrower.hasSlipper = false;
-
-        taya.position.set(canBasePosition.x + 80f, canBasePosition.y);
+        taya.position.set(canBasePosition.x + TAYA_SPAWN_RIGHT_OF_BASE, canBasePosition.y);
         taya.hasCan = false;
+        taya.hasSlipper = false;
 
         slipper.reset(thrower.position.x, thrower.position.y);
         can.reset(canBasePosition.x, canBasePosition.y);
@@ -699,10 +752,10 @@ public class GameScreen implements Screen {
         }
 
         shapeRenderer.setColor(Color.CYAN);
-        shapeRenderer.rect(thrower.position.x - PLAYER_HITBOX_W / 2f,
-            thrower.position.y + PLAYER_HITBOX_OFFSET_Y - PLAYER_HITBOX_H / 2f, PLAYER_HITBOX_W, PLAYER_HITBOX_H);
-        shapeRenderer.rect(taya.position.x - PLAYER_HITBOX_W / 2f,
-            taya.position.y + PLAYER_HITBOX_OFFSET_Y - PLAYER_HITBOX_H / 2f, PLAYER_HITBOX_W, PLAYER_HITBOX_H);
+        for (Player p : players) {
+            shapeRenderer.rect(p.position.x - PLAYER_HITBOX_W / 2f,
+                p.position.y + PLAYER_HITBOX_OFFSET_Y - PLAYER_HITBOX_H / 2f, PLAYER_HITBOX_W, PLAYER_HITBOX_H);
+        }
 
         shapeRenderer.setColor(Color.ORANGE);
         shapeRenderer.rect(can.position.x + CAN_HITBOX_OFFSET_X - CAN_HITBOX_W / 2f,

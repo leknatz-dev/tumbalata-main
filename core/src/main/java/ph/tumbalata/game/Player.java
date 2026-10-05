@@ -9,7 +9,23 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
 
 public class Player {
+    /** Name-tag colour per player slot (P1 red, P2 blue, P3 green, P4 yellow). */
+    public static final Color[] SLOT_COLORS = {
+        new Color(0.95f, 0.30f, 0.30f, 1f),
+        new Color(0.35f, 0.55f, 1.00f, 1f),
+        new Color(0.35f, 0.85f, 0.40f, 1f),
+        new Color(1.00f, 0.85f, 0.25f, 1f)
+    };
+
+    /** Stable player number (0 = Player 1). Never changes when roles swap; use it for scores and the HUD. */
+    public final int id;
+    /** The character this player picked (index into {@link Characters}). */
+    public final int characterIndex;
+    public int score = 0;
+
     public Vector2 position;
+    /** Position at the start of this frame, used to slide back out of walls. */
+    public final Vector2 prevPosition = new Vector2();
     public Vector2 velocity;
     public float speed;
     public boolean hasCan = false;
@@ -43,9 +59,12 @@ public class Player {
     this.facingRight = !(normalizedAngle > 90 && normalizedAngle < 270);
 }
 
-    public Player(float x, float y, float speed, PlayerInput input,
-                  float minX, float maxX, float minY, float maxY, 
+    public Player(int id, int characterIndex, float x, float y, float speed, PlayerInput input,
+                  float minX, float maxX, float minY, float maxY,
                   Texture normalSheet, Texture slipperSheet, Texture canSheet) {
+        this.id = id;
+        this.characterIndex = characterIndex;
+        this.tint.set(Characters.TINTS[characterIndex]);
         this.position = new Vector2(x, y);
         this.velocity = new Vector2(0, 0);
         this.speed = speed;
@@ -67,6 +86,15 @@ public class Player {
     public void setXBounds(float minX, float maxX) {
         this.minX = minX;
         this.maxX = maxX;
+    }
+
+    /** Short label for the HUD and name tags: "P1" ... "P4". */
+    public String label() {
+        return "P" + (id + 1);
+    }
+
+    public Color slotColor() {
+        return SLOT_COLORS[id % SLOT_COLORS.length];
     }
 
     public void handleInput(float delta) {

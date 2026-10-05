@@ -27,17 +27,18 @@ public class PlayerSelectScreen implements Screen {
     private static final int GAME_WINDOW_H = 698;
 
     private static final String BACKGROUND_FILE = "menu_background.png";
-    private static final String BUTTON_3P_FILE = "3p_button.png";
-    private static final String BUTTON_4P_FILE = "4p_button.png";
+    // One button per choice. A missing image (2p_button.png does not exist yet) draws a labelled placeholder.
+    private static final int[] PLAYER_COUNTS = { 2, 3, 4 };
+    private static final String[] BUTTON_FILES = { "2p_button.png", "3p_button.png", "4p_button.png" };
     private static final String SLIPPER_FILE = "menu_slipper.png";
     private static final String HEADING_FILE = "menu_title.png";
 
     private static final float BUTTON_W = 144f;
     private static final float BUTTON_H = 100f;
-    private static final float BUTTON_3P_X = 176f;
-    private static final float BUTTON_3P_Y = 200f;
-    private static final float BUTTON_4P_X = 380f;
-    private static final float BUTTON_4P_Y = 200f;
+    private static final float BUTTON_GAP = 30f;
+    private static final float BUTTONS_Y = 200f;
+    private static final float BUTTONS_START_X =
+        (MENU_WIDTH - (PLAYER_COUNTS.length * BUTTON_W + (PLAYER_COUNTS.length - 1) * BUTTON_GAP)) / 2f;
 
     private static final float HEADING_CENTER_Y = 380f;
     private static final float HEADING_BOB_AMOUNT = 6f;
@@ -59,13 +60,11 @@ public class PlayerSelectScreen implements Screen {
     private Texture background;
     private MenuBackdrop backdrop; // shared live background (null = use the image background)
     private static final float BACKDROP_DIM = 0.35f;
-    private Texture button3pTexture;
-    private Texture button4pTexture;
+    private final Texture[] buttonTextures = new Texture[PLAYER_COUNTS.length];
     private Texture slipperTexture;
     private Texture headingTexture;
 
-    private final Rectangle[] buttonBounds = new Rectangle[2];
-    private final int[] playerCounts = { 3, 4 };
+    private final Rectangle[] buttonBounds = new Rectangle[PLAYER_COUNTS.length];
     private int selected = 0;
     private float time = 0f;
     private boolean leaving = false;
@@ -94,13 +93,12 @@ public class PlayerSelectScreen implements Screen {
 
         background = loadTexture(BACKGROUND_FILE);
         backdrop = game.getBackdrop();
-        button3pTexture = loadTexture(BUTTON_3P_FILE);
-        button4pTexture = loadTexture(BUTTON_4P_FILE);
+        for (int i = 0; i < PLAYER_COUNTS.length; i++) {
+            buttonTextures[i] = loadTexture(BUTTON_FILES[i]);
+            buttonBounds[i] = new Rectangle(BUTTONS_START_X + i * (BUTTON_W + BUTTON_GAP), BUTTONS_Y, BUTTON_W, BUTTON_H);
+        }
         slipperTexture = loadTexture(SLIPPER_FILE);
         headingTexture = loadTexture(HEADING_FILE);
-
-        buttonBounds[0] = new Rectangle(BUTTON_3P_X, BUTTON_3P_Y, BUTTON_W, BUTTON_H);
-        buttonBounds[1] = new Rectangle(BUTTON_4P_X, BUTTON_4P_Y, BUTTON_W, BUTTON_H);
     }
 
     private Texture loadTexture(String file) {
@@ -131,15 +129,18 @@ public class PlayerSelectScreen implements Screen {
         Rectangle sel = buttonBounds[selected];
         float bob = (MathUtils.sin(time * SLIPPER_BOB_SPEED) + 1f) / 2f * SLIPPER_BOB_AMOUNT;
 
-        if (background == null || button3pTexture == null || button4pTexture == null || slipperTexture == null) {
+        boolean anyButtonMissing = false;
+        for (Texture t : buttonTextures) anyButtonMissing |= t == null;
+        if (background == null || anyButtonMissing || slipperTexture == null) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
             if (backdrop == null && background == null) {
                 shapeRenderer.setColor(0.18f, 0.35f, 0.25f, 1f);
                 shapeRenderer.rect(0, 0, MENU_WIDTH, MENU_HEIGHT);
             }
             shapeRenderer.setColor(Color.DARK_GRAY);
-            if (button3pTexture == null) shapeRenderer.rect(buttonBounds[0].x, buttonBounds[0].y, BUTTON_W, BUTTON_H);
-            if (button4pTexture == null) shapeRenderer.rect(buttonBounds[1].x, buttonBounds[1].y, BUTTON_W, BUTTON_H);
+            for (int i = 0; i < buttonBounds.length; i++) {
+                if (buttonTextures[i] == null) shapeRenderer.rect(buttonBounds[i].x, buttonBounds[i].y, BUTTON_W, BUTTON_H);
+            }
             if (slipperTexture == null) {
                 shapeRenderer.setColor(Color.BROWN);
                 shapeRenderer.ellipse(sel.x + (BUTTON_W - 40f) / 2f, sel.y - SLIPPER_GAP - 16f + bob, 40f, 16f);
@@ -163,11 +164,10 @@ public class PlayerSelectScreen implements Screen {
             font.getData().setScale(1f);
         }
 
-        if (button3pTexture != null) batch.draw(button3pTexture, buttonBounds[0].x, buttonBounds[0].y, BUTTON_W, BUTTON_H);
-        else drawLabel(0, "3P");
-
-        if (button4pTexture != null) batch.draw(button4pTexture, buttonBounds[1].x, buttonBounds[1].y, BUTTON_W, BUTTON_H);
-        else drawLabel(1, "4P");
+        for (int i = 0; i < buttonBounds.length; i++) {
+            if (buttonTextures[i] != null) batch.draw(buttonTextures[i], buttonBounds[i].x, buttonBounds[i].y, BUTTON_W, BUTTON_H);
+            else drawLabel(i, PLAYER_COUNTS[i] + "P");
+        }
 
         if (slipperTexture != null) {
             float sw = slipperTexture.getWidth();
@@ -221,7 +221,7 @@ public class PlayerSelectScreen implements Screen {
         boolean clicked = Gdx.input.justTouched() && hovered != -1;
         if (clicked) selected = hovered;
 
-        if (confirm || clicked) startGame(playerCounts[selected]);
+        if (confirm || clicked) startGame(PLAYER_COUNTS[selected]);
     }
 
     private void startGame(int playerCount) {
@@ -251,8 +251,9 @@ public class PlayerSelectScreen implements Screen {
         if (font != null) { font.dispose(); font = null; }
         if (background != null) { background.dispose(); background = null; }
         backdrop = null; // owned by TumbalataGame and shared with the other menu screens
-        if (button3pTexture != null) { button3pTexture.dispose(); button3pTexture = null; }
-        if (button4pTexture != null) { button4pTexture.dispose(); button4pTexture = null; }
+        for (int i = 0; i < buttonTextures.length; i++) {
+            if (buttonTextures[i] != null) { buttonTextures[i].dispose(); buttonTextures[i] = null; }
+        }
         if (slipperTexture != null) { slipperTexture.dispose(); slipperTexture = null; }
         if (headingTexture != null) { headingTexture.dispose(); headingTexture = null; }
     }

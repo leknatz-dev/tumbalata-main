@@ -278,10 +278,10 @@ The most important gap is that the Thrower can never cross the throw line, so tw
 
 | # | Issue | Impact | Suggested fix |
 | --- | --- | --- | --- |
-| 1 | The Thrower's x range is set to 20 to 300 (throw line minus 20) at start and on every round reset, and is never widened | High: the Thrower cannot fetch a slipper that lands past the line, and a tag needs the Thrower past the line, so tagging cannot happen | Widen the Thrower's bounds to the full arena once the slipper is thrown, and restore them in the round reset |
+| 1 | The Thrower's x range is set to 20 to 300 (throw line minus 20) at start and on every round reset, and is never widened | High: the Thrower cannot fetch a slipper that lands past the line, and a tag needs the Thrower past the line, so tagging cannot happen | **Fixed (Oct 2026):** the active Thrower may cross the line once the slipper is thrown; bounds are restored on round reset |
 | 2 | The 4-slot controller layer was written without access to the owner's pads and has not been run | Medium: unknown pad numbers or a compile error would block menus and the game | Run it with one pad, check the console button numbers, add `controller.properties` if needed |
 | 3 | The owner's VS Code / Gradle import is failing (see Build section) | Blocks all testing in the IDE | Fix the import; `gradlew.bat lwjgl3:run` works as a fallback |
-| 4 | `playerCount` (3 or 4) is only passed to the victory screen; there are still only two `Player` objects | Medium: 3P and 4P look selectable but play as 2P | Needs the 3 to 4 player rules (open question), then new `Player` objects on input slots 3 and 4 |
+| 4 | ~~Only two `Player` objects~~ | **Fixed (Oct 2026):** `GameScreen` holds 2 to 4 players; `Roster` assigns 1 Taya and a turn order of Throwers | — |
 | 5 | No scoring: the victory screen uses random scores while `fakeScoresForTesting` is true | Medium | Define how points are earned, fill the `scores` array, set the flag to false |
 | 6 | Character choice only tints Player 1's sprite; there are no per-character sheets | Low | Replace the tint with per-character sheets when the art exists |
 | 7 | Gameplay positions (throw line at 25%, can base at 80% x / 50% y, spawns) are fractions of the 1280 x 704 grid, not measured on the painted art | Low | Tune against the final court art |
@@ -327,10 +327,10 @@ The scoring rules and the 3 to 4 player rules block the most work, so they come 
 | # | Question | Why it matters | Assumption until decided |
 | --- | --- | --- | --- |
 | 1 | How are points earned (can knocked down, successful tag, can landing on the slipper, time spent as Taya)? | Needed for scoring and the victory podium | Not decided; random scores are shown |
-| 2 | How do 3 and 4 players play together (rotating queue, several throwers against one Taya, teams, free-for-all)? | Decides roles, spawn positions, HUD and what the 3P and 4P buttons mean | Still two active players; extra players are unused |
+| 2 | How do 3 and 4 players play together (rotating queue, several throwers against one Taya, teams, free-for-all)? | Decides roles, spawn positions, HUD and what the 3P and 4P buttons mean | **Decided:** 1 Taya vs all other players as Throwers, who take turns throwing (P1, P2, P3...). A tagged Thrower, or the one whose slipper Taya's can hits, becomes Taya and the old Taya throws next. Last player starts as Taya. |
 | 3 | Should the Thrower be free to roam the whole arena after throwing? | Needed to fix the throw-line bounds | Yes, only until the round resets |
 | 4 | Keep menus at 700 x 500 or switch to 960 x 540 (16:9)? | Decides the size of all menu art | 700 x 500 stays in the code |
 | 5 | Match length: one timer, or best of N rounds? What is the final length? | Replaces the 40 s test timer | One 40 s timer |
-| 6 | Does each player pick their own character, and may two players pick the same one? | Changes the character select screen | Only Player 1 picks; duplicates allowed |
+| 6 | Does each player pick their own character, and may two players pick the same one? | Changes the character select screen | **Decided:** every player picks with their own cursor and locks in with A; duplicates allowed |
 | 7 | Are all four controllers the same model? | If not, each needs its own button profile | Same model, one default profile |
 | 8 | Which platforms must it run on, and what is the delivery format (jar, Windows exe)? | Affects packaging and testing | Windows only |

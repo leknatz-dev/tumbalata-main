@@ -17,7 +17,11 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 
-/** "Choose your character" screen: 4 placeholder cards, then starts the game. */
+/**
+ * "Choose your character" screen: 4 placeholder cards. Every player moves their own cursor with their own pad or keys
+ * and locks in with A (B to change their mind). The game starts when everyone is locked in. Duplicates are allowed.
+ * The mouse drives Player 1's cursor.
+ */
 public class CharacterSelectScreen implements Screen {
     // --- SCREEN SIZE (same as the other menus) ---
     private static final float MENU_WIDTH = 700f;
@@ -44,10 +48,18 @@ public class CharacterSelectScreen implements Screen {
     private static final float CARDS_Y = 190f;
     private static final float CARDS_START_X = (MENU_WIDTH - (Characters.COUNT * CARD_W + (Characters.COUNT - 1) * CARD_GAP)) / 2f;
 
-    // Slipper indicator sits under the selected card and bobs up and down
+    // Player tags ("P1".."P4") above the card each player is on; solid when locked in
+    private static final float TAG_W = 26f;
+    private static final float TAG_H = 18f;
+    private static final float TAG_GAP = 2f;
+    private static final float TAGS_ABOVE_CARD = 8f;
+    private static final float HINT_Y = 120f;
+
+    // Slipper indicator sits under Player 1's card and bobs up and down
     private static final float SLIPPER_GAP = 10f;
     private static final float SLIPPER_BOB_AMOUNT = 5f;
     private static final float SLIPPER_BOB_SPEED = 6f;
+    private static final Color UNPICKED_TINT = new Color(0.65f, 0.65f, 0.65f, 1f);
 
     private final TumbalataGame game;
     private final int playerCount;
@@ -67,7 +79,8 @@ public class CharacterSelectScreen implements Screen {
     private final Texture[] portraits = new Texture[Characters.COUNT];
 
     private final Rectangle[] cardBounds = new Rectangle[Characters.COUNT];
-    private int selected = 0;
+    private final int[] cursor;      // cursor[player] = card that player is on
+    private final boolean[] locked;  // locked[player] = player has confirmed their pick
     private float time = 0f;
     private boolean leaving = false;
     private final Vector2 mouse = new Vector2();
@@ -76,6 +89,14 @@ public class CharacterSelectScreen implements Screen {
     public CharacterSelectScreen(TumbalataGame game, int playerCount) {
         this.game = game;
         this.playerCount = playerCount;
+        this.cursor = new int[playerCount];
+        this.locked = new boolean[playerCount];
+        for (int p = 0; p < playerCount; p++) cursor[p] = p % Characters.COUNT; // everyone starts on a different card
+    }
+
+    private boolean anyCursorOn(int card) {
+        for (int p = 0; p < playerCount; p++) if (cursor[p] == card) return true;
+        return false;
     }
 
     @Override
@@ -125,10 +146,10 @@ public class CharacterSelectScreen implements Screen {
             backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
         }
 
-        Rectangle sel = cardBounds[selected];
+        Rectangle sel = cardBounds[cursor[0]];
         float bob = (MathUtils.sin(time * SLIPPER_BOB_SPEED) + 1f) / 2f * SLIPPER_BOB_AMOUNT;
 
-        // --- Shapes: placeholder background, cards, selection border, placeholder slipper ---
+        // --- Shapes: placeholder background, cards, selection border, player tags, placeholder slipper ---
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -138,13 +159,14 @@ public class CharacterSelectScreen implements Screen {
         }
         for (int i = 0; i < Characters.COUNT; i++) {
             Rectangle r = cardBounds[i];
-            if (i == selected) { // white border behind the selected card
+            boolean picked = anyCursorOn(i);
+            if (picked) { // white border behind every card someone is on
                 shapeRenderer.setColor(Color.WHITE);
                 shapeRenderer.rect(r.x - 5f, r.y - 5f, r.width + 10f, r.height + 10f);
             }
             if (portraits[i] == null) {
                 Color c = Characters.CARD_COLORS[i];
-                float dim = (i == selected) ? 1f : 0.65f; // unselected cards are a bit darker
+                float dim = picked ? 1f : 0.65f; // cards nobody is on are a bit darker
                 shapeRenderer.setColor(c.r * dim, c.g * dim, c.b * dim, 1f);
                 shapeRenderer.rect(r.x, r.y, r.width, r.height);
                 // simple placeholder "head" so the card doesn't look empty
@@ -152,6 +174,11 @@ public class CharacterSelectScreen implements Screen {
                 shapeRenderer.circle(r.x + r.width / 2f, r.y + r.height * 0.62f, 24f);
                 shapeRenderer.rect(r.x + r.width / 2f - 30f, r.y + 12f, 60f, 48f);
             }
+        }
+        for (int p = 0; p < playerCount; p++) {
+            Color c = Player.SLOT_COLORS[p];
+            shapeRenderer.setColor(c.r, c.g, c.b, locked[p] ? 1f : 0.45f);
+            shapeRenderer.rect(tagX(p), tagY(), TAG_W, TAG_H);
         }
         if (slipperTexture == null) {
             shapeRenderer.setColor(Color.BROWN);
@@ -180,13 +207,25 @@ public class CharacterSelectScreen implements Screen {
         for (int i = 0; i < Characters.COUNT; i++) {
             Rectangle r = cardBounds[i];
             if (portraits[i] != null) {
-                batch.setColor(i == selected ? Color.WHITE : new Color(0.65f, 0.65f, 0.65f, 1f));
+                batch.setColor(anyCursorOn(i) ? Color.WHITE : UNPICKED_TINT);
                 batch.draw(portraits[i], r.x, r.y, r.width, r.height);
                 batch.setColor(Color.WHITE);
             }
             layout.setText(font, Characters.NAMES[i]);
             font.draw(batch, Characters.NAMES[i], r.x + (r.width - layout.width) / 2f, r.y + 22f);
         }
+
+        for (int p = 0; p < playerCount; p++) {
+            String label = "P" + (p + 1);
+            layout.setText(font, label);
+            font.setColor(locked[p] ? Color.BLACK : Color.WHITE);
+            font.draw(batch, label, tagX(p) + (TAG_W - layout.width) / 2f, tagY() + (TAG_H + layout.height) / 2f);
+        }
+        font.setColor(Color.WHITE);
+
+        String hint = allLocked() ? "GET READY!" : "MOVE TO CHOOSE   A: LOCK IN   B: CHANGE";
+        layout.setText(font, hint);
+        font.draw(batch, hint, (MENU_WIDTH - layout.width) / 2f, HINT_Y);
 
         if (slipperTexture != null) {
             float sw = slipperTexture.getWidth();
@@ -196,19 +235,42 @@ public class CharacterSelectScreen implements Screen {
         batch.end();
     }
 
+    /** Left edge of player p's tag: tags of players on the same card sit side by side above it. */
+    private float tagX(int p) {
+        int slot = 0;
+        for (int q = 0; q < p; q++) if (cursor[q] == cursor[p]) slot++;
+        return cardBounds[cursor[p]].x + slot * (TAG_W + TAG_GAP);
+    }
+
+    private float tagY() {
+        return CARDS_Y + CARD_H + TAGS_ABOVE_CARD;
+    }
+
+    private boolean allLocked() {
+        for (int p = 0; p < playerCount; p++) if (!locked[p]) return false;
+        return true;
+    }
+
     private void handleInput() {
-        InputManager.MenuInput in = game.input().menu(); // keyboard + every controller, merged
+        InputManager input = game.input();
+        InputManager.MenuInput in = input.menu(); // used for F11 and Esc only; picking uses each player's own input
         if (in.fullscreen) game.toggleFullscreen();
-        if (leaving) return; // a screen change was requested; the screen keeps drawing while the transition plays
+        if (leaving || input.isMenuLocked()) return; // ignore input while a screen transition plays
 
-        if (in.left) {
-            selected = (selected + cardBounds.length - 1) % cardBounds.length;
-        }
-        if (in.right) {
-            selected = (selected + 1) % cardBounds.length;
+        boolean back = in.back; // Esc
+        for (int p = 0; p < playerCount; p++) {
+            PlayerInput pin = input.player(p);
+            if (locked[p]) {
+                if (pin.bPressed) locked[p] = false;
+                continue;
+            }
+            if (pin.leftPressed) cursor[p] = (cursor[p] + Characters.COUNT - 1) % Characters.COUNT;
+            if (pin.rightPressed) cursor[p] = (cursor[p] + 1) % Characters.COUNT;
+            if (pin.aPressed || pin.startPressed) locked[p] = true;
+            else if (pin.bPressed) back = true; // B with nothing to cancel goes back a screen
         }
 
-        if (in.back) {
+        if (back) {
             leaving = true;
             game.changeScreen(new PlayerSelectScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
             return;
@@ -224,18 +286,21 @@ public class CharacterSelectScreen implements Screen {
         for (int i = 0; i < cardBounds.length; i++) {
             if (cardBounds[i].contains(mouse.x, mouse.y)) hovered = i;
         }
-        if (hovered != -1 && mouseMoved) selected = hovered;
+        // The mouse drives Player 1: hover to move, click to lock in
+        if (!locked[0]) {
+            if (hovered != -1 && mouseMoved) cursor[0] = hovered;
+            if (Gdx.input.justTouched() && hovered != -1) {
+                cursor[0] = hovered;
+                locked[0] = true;
+            }
+        }
 
-        boolean confirm = in.confirm;
-        boolean clicked = Gdx.input.justTouched() && hovered != -1;
-        if (clicked) selected = hovered;
-
-        if (confirm || clicked) startGame();
+        if (allLocked()) startGame();
     }
 
     private void startGame() {
         leaving = true;
-        game.changeScreen(new GameScreen(playerCount, selected), GAME_WINDOW_W, GAME_WINDOW_H);
+        game.changeScreen(new GameScreen(cursor.clone()), GAME_WINDOW_W, GAME_WINDOW_H);
     }
 
     @Override

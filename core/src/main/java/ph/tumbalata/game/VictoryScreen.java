@@ -69,15 +69,15 @@ public class VictoryScreen implements Screen {
     private boolean leaving = false;
 
     /**
-     * @param scores         one score per player (index 0 = Player 1)
-     * @param characterIndex the character Player 1 picked (used for its placeholder color)
+     * @param scores     one score per player (index 0 = Player 1); its length is the player count
+     * @param characters the character each player picked (used for their placeholder color)
      */
-    public VictoryScreen(TumbalataGame game, int playerCount, int[] scores, int characterIndex) {
+    public VictoryScreen(TumbalataGame game, int[] scores, int[] characters) {
         this.game = game;
-        this.playerCount = MathUtils.clamp(playerCount, 1, 4);
+        this.playerCount = MathUtils.clamp(scores.length, 1, 4);
         this.scores = new int[this.playerCount];
         for (int i = 0; i < this.playerCount; i++) {
-            this.scores[i] = (scores != null && i < scores.length) ? scores[i] : 0;
+            this.scores[i] = scores[i];
         }
 
         // Rank players by score, highest first (ties keep the lower player number first)
@@ -93,15 +93,11 @@ public class VictoryScreen implements Screen {
             }
         }
 
-        // Player 1 uses the chosen character's color, the others take the remaining colors in order
+        // Each player is drawn in their own character's color
         colors = new Color[this.playerCount];
-        int pick = MathUtils.clamp(characterIndex, 0, Characters.COUNT - 1);
-        colors[0] = Characters.CARD_COLORS[pick];
-        int next = 0;
-        for (int p = 1; p < this.playerCount; p++) {
-            if (next == pick) next++;
-            colors[p] = Characters.CARD_COLORS[next % Characters.COUNT];
-            next++;
+        for (int p = 0; p < this.playerCount; p++) {
+            int pick = (characters != null && p < characters.length) ? characters[p] : p;
+            colors[p] = Characters.CARD_COLORS[MathUtils.clamp(pick, 0, Characters.COUNT - 1)];
         }
     }
 
