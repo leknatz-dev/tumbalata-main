@@ -21,6 +21,25 @@ public final class Characters {
         new Color(0.90f, 0.75f, 0.20f, 1f)
     };
 
+    // --- TRAITS (placeholder balance: small multipliers, 1 = normal). Index = character. ---
+    // They apply on top of the role: Taya and Throwers have different base speeds (GameConstants), and a FAST
+    // character is faster than normal in either role.
+    public static final String[] TRAITS = { "FAST", "STRONG", "ACCURATE", "SNEAKY" };
+    public static final String[] TRAIT_HINTS = {
+        "Runs faster, throws weaker",
+        "Throws harder and further",
+        "Slower aim meter",
+        "Grabs slippers from further away"
+    };
+    /** Running speed. */
+    public static final float[] SPEED = { 1.12f, 1.00f, 1.00f, 1.00f };
+    /** Slipper throw speed, and how far Taya tosses the can. */
+    public static final float[] THROW = { 0.90f, 1.15f, 1.00f, 1.00f };
+    /** Aim meter speed (angle swing and power bar): lower is slower, so easier to time. */
+    public static final float[] AIM = { 1.00f, 1.00f, 0.75f, 1.00f };
+    /** Reach for picking up their slipper. */
+    public static final float[] REACH = { 1.00f, 1.00f, 1.00f, 1.40f };
+
     // In-game sprite tints (placeholder until each character has its own sprite sheet)
     public static final Color[] TINTS = {
         new Color(1.00f, 0.60f, 0.60f, 1f),

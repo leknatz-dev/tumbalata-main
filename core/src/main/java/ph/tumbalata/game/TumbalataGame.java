@@ -61,11 +61,19 @@ public class TumbalataGame extends Game {
         return audio;
     }
 
+    // Saved game options (street events on/off)
+    private GameSettings settings;
+
+    public GameSettings settings() {
+        return settings;
+    }
+
     @Override
     public void create() {
         transition = new ScreenTransition();
         input = new InputManager();
         audio = new Audio();
+        settings = new GameSettings();
         // Size the launcher gave the window (also where "untouched" starts)
         autoW = Gdx.graphics.getWidth();
         autoH = Gdx.graphics.getHeight();

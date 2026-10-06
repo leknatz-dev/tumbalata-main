@@ -106,8 +106,10 @@ All input goes through one `InputManager`, created once by `TumbalataGame` and u
 | Move | W A S D | Arrow keys | D-pad | Walk (diagonals normalised) |
 | A | Space | Space, Enter | Button 0 | Start aiming, lock angle, lock power and throw |
 | B | E | E, Right Shift | Button 1 | Pick up slipper or can, place can on base |
-| Select | R | R | Button 8 | Reset the round |
-| Start | none | none | Button 9 | Confirm in menus |
+| Select | R | R | Select (button 4) | Pause / settings menu (Start or Esc / P too) |
+| Start | none | none | Start (button 6) | Confirm in menus, pause in a match |
+
+**Pause / settings menu** (`PauseMenu`): Select or Start on any player's pad, R (Select for P1 / P2 on the keyboard), Esc or P pauses the match, blurs the court and shows a square panel: RESUME, RESTART ROUND (what Select used to do), SOUND on/off, STREET EVENTS on/off, EXIT TO MENU. B / Esc / Select resumes. Placeholder look, all buttons work.
 
 Space and E also work on the second keyboard scheme, so one person can still test both roles alone. Actions are tied to the player whose turn it is: Thrower phases read the Thrower's input, Taya phases read Taya's.
 
@@ -124,7 +126,7 @@ Any controller or the keyboard can drive any menu. D-pad or WASD or arrows move 
 
 **Pad mapping**
 
-Defaults match the owner's USB retro pads: A = 0, B = 1, Select = 8, Start = 9, D-pad on axes 0 and 1 with a 0.5 dead zone, plus the pad's own D-pad buttons when it reports them. To change the numbers without recompiling, create `assets/controller.properties` with `a`, `b`, `select`, `start`, `axisX`, `axisY`, `invertY` and `deadZone`. Set `DEBUG_PRINT_BUTTONS` to true in `InputManager` to print each button number to the console.
+Button numbers come from the pad's own mapping when the controller library recognises it; the owner's PS1 pads report A = 0, B = 1, Select = 4, Start = 6 (confirmed Oct 2026: the old fixed Select = 8 / Start = 9 never fired on them). Unrecognised pads fall back to A = 0, B = 1, Select = 8, Start = 9, D-pad on axes 0 and 1 with a 0.5 dead zone. The console prints the numbers in use for each pad when it connects. To change the numbers without recompiling, create `assets/controller.properties` with `a`, `b`, `select`, `start`, `axisX`, `axisY`, `invertY` and `deadZone`. Set `DEBUG_PRINT_BUTTONS` to true in `InputManager` to print each button number to the console.
 
 **Debug keys (game screen)**
 
@@ -255,6 +257,41 @@ Big signs pop up in the middle of the match screen (class `Signs`): they pop in,
 | `gotcha.png` | GOTCHA! | Taya's tossed can lands on a slipper |
 | `good_job.png` | GOOD JOB! | Time is up (with the whistle); the victory screen follows when the sign is gone |
 
+## Match feel, street events, traits and awards
+
+**Hit-stop, shake and blur** (`CourtEffects`, `BlurRenderer`; numbers at the top of `GameScreen`)
+- Can knocked down: the action freezes for 0.07 s, then the camera shakes 3–9 px depending on how hard the slipper hit. A tag or a GOTCHA! toss gets a smaller version.
+- While a pop-up sign is up, the court behind it blurs and darkens a little (`SIGN_BLUR_RADIUS`, 0 = off). The HUD and the sign stay sharp.
+- Dust puffs at players' feet while running, a dust trail behind flying slippers, and dust behind the rolling can. Pooled, so cheap. Optional art: `assets/effects/dust.png`.
+
+**Street events: trash** (rules in `Match` + `Trash`; switch on the player-count screen, saved)
+- Every 15–25 s (first one after 8–14 s) a neighbour throws trash over the fence: a red warning circle for 1 s, then it flies in and lands. At most 3 on the court; each fades away after 20 s.
+- Walking onto it: the player slides for 0.45 s, then is stunned for 1 s (stars over the head). No moving, picking up, throwing or tagging meanwhile. The trash is used up.
+- A stunned Thrower can still be tagged; a stunned Taya can't tag. Slippers and the can pass over trash. Standing still on it does nothing.
+- Placeholder shapes (banana peel, plastic bag, sardine can) until `assets/trash/banana_peel.png`, `plastic_bag.png`, `sardine_can.png` exist.
+
+**Street events: stray dog** (rules in `Match` + `StrayDog`, same Street Events switch)
+- 15–25 s into the match, then 20–35 s after its poop is stepped in, a stray dog barks and trots in from the left or right edge, stops at a random free spot, poops (1.2 s), and runs off the other side.
+- Only one poop on the court at a time, and it never fades: it stays until someone walks into it. No new dog comes while it is there.
+- Stepping in it: stunned on the spot for 1.5 s (no slide), same rules as trash (a stunned Thrower can still be tagged, a stunned Taya can't tag). Standing still on it does nothing.
+- Placeholder shapes until `assets/street/dog.png` (one frame, facing right; flipped when walking left) and `assets/street/poop.png` exist.
+
+**Character traits** (placeholder balance in `Characters`; multipliers on top of the role's base speed, so Taya keeps its own speed)
+
+| Character | Trait | Effect |
+| --- | --- | --- |
+| CHAR 1 | FAST | Speed ×1.12, throw ×0.9 |
+| CHAR 2 | STRONG | Throw ×1.15 (slippers fly faster, Taya tosses further) |
+| CHAR 3 | ACCURATE | Aim meter ×0.75 speed (easier to time) |
+| CHAR 4 | SNEAKY | Slipper pick-up reach ×1.4 |
+
+The character select cards show the trait and SPD / PWR / AIM / REACH bars (half full = normal). The trait belongs to the character, so it stays with the player in both roles; the in-game HUD lists each player's trait next to their score.
+
+**Can drawing:** the can on the ground is depth-sorted with the players by where it touches the ground, so a player standing behind it is hidden by it and a player in front covers it. While Taya carries it, it is drawn smaller at hand height (`CARRIED_CAN_Y`, `CARRIED_CAN_SCALE` in `GameScreen`) and has no separate shadow.
+
+**End-of-match awards** (`Awards`, counted in `MatchStats`): shown one at a time under the podium. Only awarded if someone did it; ties share.
+ASINTADO (most can knocks), BEST TAYA (tags + toss hits), TSINELAS CHAMPION (most safe runs), MADULAS (most slips on trash), MABAHO (stepped in dog poop the most), MALAS (caught the most).
+
 ## Audio
 
 All sound goes through one `Audio` class, created once by `TumbalataGame` (`game.audio()`). Screens call `play(Audio.Sfx.X)` for effects and `playMusic(Audio.Track.X)` for music; music fades between tracks, and asking for the track that is already playing does nothing, so the menu music carries on across the menus. **M** mutes and unmutes anywhere. Master, music and effects volume and mute are saved in Preferences (`tumbalata`), ready for a settings screen.
@@ -275,7 +312,11 @@ Every file below is a synthesized **placeholder** (made by `tools/GenPlaceholder
 | `sfx/can_hit` | A slipper knocks the can down, or Taya's can lands on a slipper |
 | `sfx/tag` | Taya tags a Thrower |
 | `sfx/score` | Any points scored |
-| `music/menu` | Looping on the main menu, player count and character select |
+| `sfx/trash_land` | Street-event trash lands on the court |
+| `sfx/slip` | A player slips on trash |
+| `sfx/dog_bark` | The stray dog trots onto the court |
+| `sfx/poop_squish` | A player steps in the dog's poop |
+| `music/menu` | Looping on the main menu, player count and character select; also quietly under the game music during a match (background layer at 20%, under the game music in front). Music defaults to 15% volume; each track has its own volume in `Audio.Track` for balancing real songs |
 | `music/game` | Looping during the match (fades out at time up) |
 | `music/victory` | Looping on the victory screen |
 

@@ -9,7 +9,9 @@ import java.util.Properties;
 /**
  * Which physical button/axis numbers mean what, for one kind of controller.
  *
- * The defaults match your USB retro pads (A = 0, B = 1, Select = 8, Start = 9, D-pad on axes 0 and 1).
+ * Numbers come from the pad's own mapping when the controller library recognises it (usually A = 0, B = 1,
+ * Select = 4, Start = 6). Otherwise the raw defaults below are used (A = 0, B = 1, Select = 8, Start = 9, D-pad on axes 0
+ * and 1). The console shows the numbers in use for each pad when it connects.
  * To change them WITHOUT recompiling, create assets/controller.properties, for example:
  *
  *     a=0
@@ -44,8 +46,14 @@ public final class ControllerProfile {
     public static ControllerProfile forController(Controller controller) {
         ControllerProfile p = new ControllerProfile();
 
+        // A pad the controller library recognises reports its buttons in a standard layout (e.g. Select = 4,
+        // Start = 6), not the raw numbers above. Use those whenever it gives them.
         ControllerMapping m = controller.getMapping();
         if (m != null) {
+            if (m.buttonA >= 0) p.a = m.buttonA;
+            if (m.buttonB >= 0) p.b = m.buttonB;
+            if (m.buttonBack >= 0) p.select = m.buttonBack;
+            if (m.buttonStart >= 0) p.start = m.buttonStart;
             p.dpadUp = m.buttonDpadUp;
             p.dpadDown = m.buttonDpadDown;
             p.dpadLeft = m.buttonDpadLeft;

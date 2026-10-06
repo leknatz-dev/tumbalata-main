@@ -123,7 +123,10 @@ public final class InputManager {
             if (pads[i].controller == null) {
                 pads[i].controller = controller;
                 pads[i].profile = ControllerProfile.forController(controller);
-                Gdx.app.log("Input", "Player " + (i + 1) + " controller: " + controller.getName());
+                ControllerProfile pr = pads[i].profile;
+                Gdx.app.log("Input", "Player " + (i + 1) + " controller: " + controller.getName() + " (A=" + pr.a + " B=" + pr.b
+                    + " Select=" + pr.select + " Start=" + pr.start + ", buttons " + controller.getMinButtonIndex() + ".."
+                    + controller.getMaxButtonIndex() + ")");
                 return;
             }
         }

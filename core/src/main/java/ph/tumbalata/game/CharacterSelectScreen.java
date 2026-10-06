@@ -201,6 +201,7 @@ public class CharacterSelectScreen implements Screen {
                 shapeRenderer.rect(r.x + r.width / 2f - 30f, r.y + 12f, 60f, 48f);
             }
         }
+        for (int i = 0; i < Characters.COUNT; i++) drawStatBars(cardBounds[i], i);
         for (int p = 0; p < playerCount; p++) {
             Color c = Player.SLOT_COLORS[p];
             shapeRenderer.setColor(c.r, c.g, c.b, locked[p] ? 1f : 0.45f);
@@ -239,6 +240,7 @@ public class CharacterSelectScreen implements Screen {
             }
             layout.setText(font, Characters.NAMES[i]);
             font.draw(batch, Characters.NAMES[i], r.x + (r.width - layout.width) / 2f, r.y + 22f);
+            drawStatLabels(r, i);
 
             int owner = lockedBy(i);
             if (owner >= 0) { // "TAKEN" in the owner's colour across the card
@@ -270,6 +272,52 @@ public class CharacterSelectScreen implements Screen {
             batch.draw(slipperTexture, sel.x + (CARD_W - sw) / 2f, sel.y - SLIPPER_GAP - 5f - sh + bob, sw, sh);
         }
         batch.end();
+    }
+
+    // --- TRAIT STATS (placeholder panel at the bottom of each card) ---
+    private static final String[] STAT_LABELS = { "SPD", "PWR", "AIM", "REACH" };
+    private static final float STATS_Y = 34f;        // first bar row, from the card's bottom
+    private static final float STAT_ROW = 10f;
+    private static final float BAR_X = 44f, BAR_W = 56f, BAR_H = 5f;
+
+    /** 0..1 bar length; a normal stat (1x) is half full. AIM is the aim meter speed, so slower shows as better. */
+    private static float statBar(int character, int stat) {
+        float v;
+        switch (stat) {
+            case 0: v = Characters.SPEED[character]; break;
+            case 1: v = Characters.THROW[character]; break;
+            case 2: v = 1f / Characters.AIM[character]; break;
+            default: v = Characters.REACH[character]; break;
+        }
+        return MathUtils.clamp(0.5f + (v - 1f) * 2f, 0.1f, 1f);
+    }
+
+    /** Dark panel and stat bars. Inside the Filled shape block. */
+    private void drawStatBars(Rectangle r, int character) {
+        shapeRenderer.setColor(0f, 0f, 0f, 0.45f);
+        shapeRenderer.rect(r.x + 4f, r.y + STATS_Y - 6f, r.width - 8f, STAT_ROW * STAT_LABELS.length + 4f);
+        for (int s = 0; s < STAT_LABELS.length; s++) {
+            float y = r.y + STATS_Y + s * STAT_ROW;
+            shapeRenderer.setColor(1f, 1f, 1f, 0.2f);
+            shapeRenderer.rect(r.x + BAR_X, y - BAR_H + 1f, BAR_W, BAR_H);
+            float fill = statBar(character, s);
+            shapeRenderer.setColor(fill > 0.55f ? Color.GOLD : (fill < 0.45f ? Color.SALMON : Color.LIGHT_GRAY));
+            shapeRenderer.rect(r.x + BAR_X, y - BAR_H + 1f, BAR_W * fill, BAR_H);
+        }
+    }
+
+    /** Trait name at the top of the card, stat names next to the bars. Inside batch.begin()/end(). */
+    private void drawStatLabels(Rectangle r, int character) {
+        font.getData().setScale(0.9f);
+        font.setColor(Color.GOLD);
+        layout.setText(font, Characters.TRAITS[character]);
+        font.draw(batch, Characters.TRAITS[character], r.x + (r.width - layout.width) / 2f, r.y + r.height - 6f);
+        font.getData().setScale(0.6f);
+        font.setColor(Color.WHITE);
+        for (int s = 0; s < STAT_LABELS.length; s++) {
+            font.draw(batch, STAT_LABELS[s], r.x + 8f, r.y + STATS_Y + s * STAT_ROW + 2f);
+        }
+        font.getData().setScale(1f);
     }
 
     /** Left edge of player p's tag: tags of players on the same card sit side by side above it. */

@@ -75,6 +75,25 @@ public class Match {
     private static final float[][] WAITING_THROWER_OFFSETS = { { -130f, 90f }, { -130f, -90f }, { -200f, 0f } };
     private static final float EDGE_MARGIN = 20f;
 
+    // --- STREET EVENT: TRASH (see Trash) ---
+    public static final int TRASH_MAX = 3;
+    private static final float TRASH_FIRST_MIN = 8f, TRASH_FIRST_MAX = 14f;    // seconds until the first one
+    private static final float TRASH_EVERY_MIN = 15f, TRASH_EVERY_MAX = 25f;   // then between throws
+    private static final float TRASH_RETRY = 3f;          // court full / no free spot: try again this much later
+    public static final float TRASH_SLIP_DISTANCE = 16f;  // feet this close to landed trash = slip
+    public static final float FEET_OFFSET_Y = -19f;       // player position -> feet (where the shadow is drawn)
+    // Where trash may land: inside the court walls, not on the can base, other trash or a player
+    private static final float TRASH_MIN_X = 220f, TRASH_MAX_X = 1180f;
+    private static final float TRASH_MIN_Y = -20f, TRASH_MAX_Y = 330f;
+    private static final float TRASH_CLEAR_OF_BASE = 70f, TRASH_CLEAR_OF_TRASH = 50f, TRASH_CLEAR_OF_PLAYER = 45f;
+    private static final float TRASH_THROWN_FROM_Y = 480f; // over the fence at the top of the court
+
+    // --- STREET EVENT: STRAY DOG (see StrayDog). One poop at a time; it stays until someone steps in it. ---
+    private static final float DOG_FIRST_MIN = 15f, DOG_FIRST_MAX = 25f;   // seconds until the first dog
+    private static final float DOG_EVERY_MIN = 20f, DOG_EVERY_MAX = 35f;   // after the poop is stepped in
+    public static final float POOP_STUN_SECONDS = 1.5f;
+    public static final float POOP_STEP_DISTANCE = 16f;
+
     /** Where the round is. */
     public enum RoundMode {
         /** Throwers take turns. Nobody has hit the can yet: slippers stay where they land and nobody can be tagged. */
@@ -105,6 +124,14 @@ public class Match {
         default void tagged(Player taya, Player victim) {}
         default void tossHitSlipper(Player taya, Player victim) {}
         default void roundEnded() {}
+        /** Street event: trash is about to be thrown in (its warning circle appears). */
+        default void trashIncoming(Trash trash) {}
+        default void trashLanded(Trash trash) {}
+        default void slipped(Player player, Trash trash) {}
+        /** Street event: a stray dog starts trotting onto the court. */
+        default void dogArrived(StrayDog dog) {}
+        default void dogPooped(StrayDog dog) {}
+        default void steppedInPoop(Player player) {}
     }
 
     private static final Events NO_EVENTS = new Events() {};
@@ -135,6 +162,18 @@ public class Match {
     private float timeLeft;
     private boolean over = false;
 
+    private final MatchStats stats;
+
+    // Optional rules, off unless the game turns them on (so tests stay neutral)
+    private boolean characterTraits = false;
+    private boolean streetEvents = false;
+    private java.util.Random rng = new java.util.Random();
+    private final Array<Trash> trash = new Array<>();
+    private float trashTimer = 0f;
+    private StrayDog dog;       // null = no dog around
+    private Vector2 poop;       // null = no poop on the court
+    private float dogTimer = 0f;
+
     /**
      * @param players     2 to 4 players, index = player id, each with a {@link Player#slipper}
      * @param can         the can (its position is reset to the base)
@@ -153,12 +192,41 @@ public class Match {
         this.playerWalls = playerWalls;
         this.canBlockers = canBlockers;
         this.timeLeft = matchTime;
+        this.stats = new MatchStats(players.size);
         resetRound(false);
     }
 
     public void setEvents(Events events) {
         this.events = events == null ? NO_EVENTS : events;
     }
+
+    /** Each character's trait (speed, throw, aim, reach; see {@link Characters}) applies. Off by default. */
+    public void setCharacterTraits(boolean enabled) {
+        characterTraits = enabled;
+        applyRoles();
+    }
+
+    /** Street events (trash thrown onto the court). Off by default. */
+    public void setStreetEvents(boolean enabled) {
+        setStreetEvents(enabled, System.nanoTime());
+    }
+
+    /** Same, with a fixed random seed (tests). */
+    public void setStreetEvents(boolean enabled, long seed) {
+        streetEvents = enabled;
+        rng = new java.util.Random(seed);
+        trashTimer = randomBetween(TRASH_FIRST_MIN, TRASH_FIRST_MAX);
+        dogTimer = randomBetween(DOG_FIRST_MIN, DOG_FIRST_MAX);
+    }
+
+    private float randomBetween(float min, float max) {
+        return min + rng.nextFloat() * (max - min);
+    }
+
+    private float speedFactor(Player p) { return characterTraits ? Characters.SPEED[p.characterIndex] : 1f; }
+    private float throwFactor(Player p) { return characterTraits ? Characters.THROW[p.characterIndex] : 1f; }
+    private float aimFactor(Player p) { return characterTraits ? Characters.AIM[p.characterIndex] : 1f; }
+    private float reachFactor(Player p) { return characterTraits ? Characters.REACH[p.characterIndex] : 1f; }
 
     // ------------------------------------------------------------------
     // State for drawing and tests
@@ -176,6 +244,13 @@ public class Match {
     public float power() { return currentPower; }
     public float timeLeft() { return Math.max(0f, timeLeft); }
     public boolean isOver() { return over; }
+    public MatchStats stats() { return stats; }
+    /** Trash on (or flying onto) the court. */
+    public Array<Trash> trash() { return trash; }
+    /** The stray dog, or null. */
+    public StrayDog dog() { return dog; }
+    /** Where the dog's poop is, or null when there is none. */
+    public Vector2 poop() { return poop; }
 
     /** One score per player, index = player id. */
     public int[] scores() {
@@ -206,7 +281,7 @@ public class Match {
 
     /** Taya may pick the can up when it has been knocked over (or tossed), or to toss it when everyone missed. */
     public boolean canTayaPickUpCan() {
-        if (taya.hasCan) return false;
+        if (taya.hasCan || taya.isStunned()) return false;
         return (mode == RoundMode.SCRAMBLE && can.isHit) || mode == RoundMode.TAYA_TOSS;
     }
 
@@ -215,13 +290,14 @@ public class Match {
     }
 
     public boolean canTayaPlaceCan() {
-        return mode == RoundMode.SCRAMBLE && taya.hasCan && taya.position.dst(canBase) < CAN_PLACE_DISTANCE;
+        return mode == RoundMode.SCRAMBLE && taya.hasCan && !taya.isStunned()
+            && taya.position.dst(canBase) < CAN_PLACE_DISTANCE;
     }
 
     /** Slippers on the ground may only be picked up once the can was hit or Taya's toss missed. */
     public boolean canPickUpSlipper(Player p) {
-        return mode == RoundMode.SCRAMBLE && p != taya && !p.hasSlipper
-            && p.position.dst(p.slipper.position) < SLIPPER_PICKUP_DISTANCE;
+        return mode == RoundMode.SCRAMBLE && p != taya && !p.hasSlipper && !p.isStunned()
+            && p.position.dst(p.slipper.position) < SLIPPER_PICKUP_DISTANCE * reachFactor(p);
     }
 
     /** True for a Thrower whose slipper is on the ground or flying (so it should be drawn). */
@@ -273,6 +349,10 @@ public class Match {
         // --- Movement: everyone, except a Thrower who is aiming and Taya holding the can for the toss ---
         for (int pi = 0; pi < players.size; pi++) {
             Player p = players.get(pi);
+            if (p.isStunned()) {
+                p.updateSlip(delta); // slipped on trash: no control until it wears off
+                continue;
+            }
             if (isFrozen(p)) {
                 p.stop();
                 continue;
@@ -287,7 +367,7 @@ public class Match {
         }
 
         // --- B: Taya picks up the can, or puts it back on its base ---
-        if (taya.input.bPressed) {
+        if (taya.input.bPressed && !taya.isStunned()) {
             if (canTayaPickUpCan() && isTayaNearCan()) {
                 taya.hasCan = true;
             } else if (canTayaPlaceCan()) {
@@ -300,9 +380,9 @@ public class Match {
         if (aim == Aim.NONE) {
             Player up = nextThrower();
             if ((mode == RoundMode.THROWING || mode == RoundMode.SCRAMBLE) && up != null && up.hasSlipper
-                && up.input.aPressed) {
+                && !up.isStunned() && up.input.aPressed) {
                 startAim(up);
-            } else if (mode == RoundMode.TAYA_TOSS && taya.hasCan && taya.input.aPressed) {
+            } else if (mode == RoundMode.TAYA_TOSS && taya.hasCan && !taya.isStunned() && taya.input.aPressed) {
                 startAim(taya);
             }
         } else if (aimer.input.aPressed) {
@@ -321,15 +401,11 @@ public class Match {
                 }
             }
         }
+    }
 
-        // Reset round: Select (any player's pad) or R
-        for (int pi = 0; pi < players.size; pi++) {
-            Player p = players.get(pi);
-            if (p.input.selectPressed) {
-                resetRound(false);
-                break;
-            }
-        }
+    /** Starts the current round over (same roles, same turn order). Used by the pause menu. */
+    public void restartRound() {
+        resetRound(false);
     }
 
     /**
@@ -357,18 +433,20 @@ public class Match {
         if (taya.hasCan) can.position.set(taya.position.x, taya.position.y + 15);
 
         if (aim == Aim.ANGLE) {
+            float aimSpeed = aimFactor(aimer);
             if (aimer == taya) {
-                angleTimer += delta * 4f;
+                angleTimer += delta * 4f * aimSpeed;
                 currentAngle = (angleTimer * 50f) % 360f;
             } else {
-                angleTimer += delta * 3.5f;
+                angleTimer += delta * 3.5f * aimSpeed;
                 currentAngle = MathUtils.sin(angleTimer) * 80f;
             }
         } else if (aim == Aim.POWER) {
-            powerTimer += delta * 4f;
+            powerTimer += delta * 4f * aimFactor(aimer);
             currentPower = ((MathUtils.sin(powerTimer) + 1f) / 2f) * 100f;
         }
 
+        updateTrash(delta);
         updateCan(delta);
 
         // Slippers on the ground or in flight; a moving slipper knocks over a standing can
@@ -432,6 +510,129 @@ public class Match {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Street event: trash
+    // ------------------------------------------------------------------
+
+    private void updateTrash(float delta) {
+        for (int i = trash.size - 1; i >= 0; i--) {
+            Trash t = trash.get(i);
+            if (t.update(delta)) events.trashLanded(t);
+            if (t.isExpired()) trash.removeIndex(i);
+        }
+
+        // Stepping on landed trash: slide, then stunned. Slippers and the can just pass over it.
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (!p.isMoving() || p.isStunned()) continue;
+            float feetY = p.position.y + FEET_OFFSET_Y;
+            for (int i = trash.size - 1; i >= 0; i--) {
+                Trash t = trash.get(i);
+                if (!t.isLanded()) continue;
+                if (Vector2.dst(p.position.x, feetY, t.target.x, t.target.y) < TRASH_SLIP_DISTANCE) {
+                    p.slip(p.velocity.x, p.velocity.y);
+                    stats.slips[p.id]++;
+                    trash.removeIndex(i); // used up
+                    events.slipped(p, t);
+                    break;
+                }
+            }
+        }
+
+        updateDog(delta);
+
+        if (!streetEvents) return;
+        trashTimer -= delta;
+        if (trashTimer > 0f) return;
+        trashTimer = throwTrash() ? randomBetween(TRASH_EVERY_MIN, TRASH_EVERY_MAX) : TRASH_RETRY;
+    }
+
+    private void updateDog(float delta) {
+        if (dog != null) {
+            if (dog.update(delta)) {
+                poop = new Vector2(dog.spot);
+                events.dogPooped(dog);
+            }
+            if (dog.state == StrayDog.State.GONE) dog = null;
+        }
+
+        // Stepping in the poop: stunned on the spot, and the poop is gone
+        if (poop != null) {
+            for (int pi = 0; pi < players.size; pi++) {
+                Player p = players.get(pi);
+                if (!p.isMoving() || p.isStunned()) continue;
+                if (Vector2.dst(p.position.x, p.position.y + FEET_OFFSET_Y, poop.x, poop.y) < POOP_STEP_DISTANCE) {
+                    p.stun(POOP_STUN_SECONDS);
+                    stats.poopSteps[p.id]++;
+                    poop = null;
+                    dogTimer = randomBetween(DOG_EVERY_MIN, DOG_EVERY_MAX);
+                    events.steppedInPoop(p);
+                    break;
+                }
+            }
+        }
+
+        // A new dog only comes when there is no dog and no poop
+        if (!streetEvents || dog != null || poop != null) return;
+        dogTimer -= delta;
+        if (dogTimer > 0f) return;
+        if (!sendDog()) dogTimer = TRASH_RETRY;
+    }
+
+    /** Sends a dog towards a random free spot. False if no spot was found. */
+    private boolean sendDog() {
+        for (int attempt = 0; attempt < 30; attempt++) {
+            float x = randomBetween(TRASH_MIN_X, TRASH_MAX_X);
+            float y = randomBetween(TRASH_MIN_Y, TRASH_MAX_Y);
+            if (!isFreeTrashSpot(x, y)) continue;
+            dog = new StrayDog(x, y, rng.nextBoolean());
+            events.dogArrived(dog);
+            return true;
+        }
+        return false;
+    }
+
+    /** Puts poop on the court right away (tests). */
+    void dropPoop(float x, float y) {
+        poop = new Vector2(x, y);
+    }
+
+    /** Throws one piece of trash at a random free spot on the court. False if the court is full or no spot found. */
+    private boolean throwTrash() {
+        if (trash.size >= TRASH_MAX) return false;
+        for (int attempt = 0; attempt < 30; attempt++) {
+            float x = randomBetween(TRASH_MIN_X, TRASH_MAX_X);
+            float y = randomBetween(TRASH_MIN_Y, TRASH_MAX_Y);
+            if (!isFreeTrashSpot(x, y)) continue;
+            Trash t = new Trash(x + randomBetween(-150f, 150f), TRASH_THROWN_FROM_Y, x, y, rng.nextInt(Trash.KINDS));
+            trash.add(t);
+            events.trashIncoming(t);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isFreeTrashSpot(float x, float y) {
+        if (playerWalls.isBlocked(x, y - FEET_OFFSET_Y, PLAYER_HITBOX_W + 10f, PLAYER_HITBOX_H + 10f)) return false;
+        if (Vector2.dst(x, y, canBase.x, canBase.y + FEET_OFFSET_Y) < TRASH_CLEAR_OF_BASE) return false;
+        for (int i = 0; i < trash.size; i++) {
+            if (trash.get(i).target.dst(x, y) < TRASH_CLEAR_OF_TRASH) return false;
+        }
+        if (poop != null && poop.dst(x, y) < TRASH_CLEAR_OF_TRASH) return false;
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (Vector2.dst(x, y, p.position.x, p.position.y + FEET_OFFSET_Y) < TRASH_CLEAR_OF_PLAYER) return false;
+        }
+        return true;
+    }
+
+    /** Puts landed trash on the court right away (tests). */
+    Trash dropTrash(float x, float y) {
+        Trash t = Trash.landed(x, y);
+        trash.add(t);
+        return t;
+    }
+
     private void updateCan(float delta) {
         if (taya.hasCan) return; // carried
 
@@ -482,13 +683,15 @@ public class Match {
 
     /** Once the can stands on its base again, Taya can tag a taggable Thrower. */
     private void checkTagging() {
-        if (!isCanStandingOnBase()) return;
+        if (!isCanStandingOnBase() || taya.isStunned()) return;
 
         for (int pi = 0; pi < players.size; pi++) {
             Player p = players.get(pi);
             if (!isTaggable(p)) continue;
             if (taya.position.dst(p.position) < TAG_DISTANCE) {
                 award(taya, Scoring.TAG);
+                stats.tags[taya.id]++;
+                stats.caught[p.id]++;
                 events.tagged(taya, p);
                 swapRoles(p);
                 return;
@@ -499,7 +702,10 @@ public class Match {
     private void endRoundNormally() {
         for (int pi = 0; pi < players.size; pi++) {
             Player p = players.get(pi);
-            if (p != taya && p.hasThrown) award(p, Scoring.HOME_SAFE);
+            if (p != taya && p.hasThrown) {
+                award(p, Scoring.HOME_SAFE);
+                stats.safeRuns[p.id]++;
+            }
         }
         events.roundEnded();
         resetRound(true);
@@ -519,7 +725,7 @@ public class Match {
 
         p.slipper.position.set(p.position);
         float rad = currentAngle * MathUtils.degreesToRadians;
-        float speed = currentPower * SLIPPER_SPEED_PER_POWER;
+        float speed = currentPower * SLIPPER_SPEED_PER_POWER * throwFactor(p);
         p.slipper.velocity.set(MathUtils.cos(rad) * speed, MathUtils.sin(rad) * speed);
         events.slipperThrown(p);
     }
@@ -543,6 +749,7 @@ public class Match {
         slipper.velocity.scl(0.5f);
 
         award(thrower, Scoring.KNOCK_CAN);
+        stats.knocks[thrower.id]++;
         events.canKnocked(thrower);
     }
 
@@ -555,8 +762,8 @@ public class Match {
         can.zVelocity = 0f;
         can.velocity.set(0f, 0f);
 
-        canLandingSpot.set(taya.position).add(MathUtils.cos(rad) * tossDistance(currentPower),
-            MathUtils.sin(rad) * tossDistance(currentPower));
+        float distance = tossDistance(currentPower) * throwFactor(taya);
+        canLandingSpot.set(taya.position).add(MathUtils.cos(rad) * distance, MathUtils.sin(rad) * distance);
 
         can.tossTo(canLandingSpot.x, canLandingSpot.y, currentPower);
         events.canTossed(taya);
@@ -583,6 +790,8 @@ public class Match {
         can.zVelocity = 120f;
 
         award(taya, Scoring.TOSS_HIT);
+        stats.tossHits[taya.id]++;
+        stats.caught[victim.id]++;
         events.tossHitSlipper(taya, victim);
     }
 
@@ -597,6 +806,7 @@ public class Match {
 
         if (nextTurn) roster.nextTurn();
         applyRoles();
+        for (int pi = 0; pi < players.size; pi++) players.get(pi).clearSlip();
 
         // Throwers in turn order: the first one at the line, the rest on the waiting spots behind it
         for (int i = 0; i < roster.throwers().size; i++) {
@@ -630,12 +840,13 @@ public class Match {
         impactVictim = null;
     }
 
-    /** Points the taya shortcut at the roster's Taya and gives every player their role's speed. */
+    /** Points the taya shortcut at the roster's Taya; every player gets their role's speed times their trait. */
     private void applyRoles() {
         taya = players.get(roster.taya());
         for (int pi = 0; pi < players.size; pi++) {
             Player p = players.get(pi);
-            p.speed = roster.isTaya(p.id) ? GameConstants.TAYA_SPEED : GameConstants.PLAYER_SPEED;
+            float base = roster.isTaya(p.id) ? GameConstants.TAYA_SPEED : GameConstants.PLAYER_SPEED;
+            p.speed = base * speedFactor(p);
         }
     }
 }

@@ -28,11 +28,15 @@ public class GenPlaceholderSounds {
         write(sfx.resolve("can_hit.wav"), clang(0.5));
         write(sfx.resolve("tag.wav"), concat(thump(0.08), tone(1200, 0.08, 0.4, Wave.SQUARE)));
         write(sfx.resolve("score.wav"), concat(tone(1320, 0.05, 0.4, Wave.SINE), tone(1760, 0.12, 0.4, Wave.SINE)));
+        write(sfx.resolve("trash_land.wav"), concat(thump(0.07), whoosh(0.12)));
+        write(sfx.resolve("slip.wav"), concat(slide(0.35), tone(220, 0.12, 0.4, Wave.SQUARE)));
+        write(sfx.resolve("dog_bark.wav"), concat(concat(woof(0.13), new double[(int) (0.08 * RATE)]), woof(0.16)));
+        write(sfx.resolve("poop_squish.wav"), squish(0.3));
 
         // Music loops (8 bars of simple arpeggios)
-        write(music.resolve("menu.wav"), loop(new double[][] { { 262, 330, 392 }, { 220, 262, 330 }, { 175, 220, 262 }, { 196, 247, 294 } }, 100, 0.25));
-        write(music.resolve("game.wav"), loop(new double[][] { { 220, 262, 330 }, { 196, 247, 294 }, { 175, 220, 262 }, { 196, 247, 294 } }, 140, 0.25));
-        write(music.resolve("victory.wav"), loop(new double[][] { { 262, 330, 392 }, { 349, 440, 523 }, { 392, 494, 587 }, { 262, 330, 392 } }, 110, 0.25));
+        write(music.resolve("menu.wav"), loop(new double[][] { { 262, 330, 392 }, { 220, 262, 330 }, { 175, 220, 262 }, { 196, 247, 294 } }, 100, 0.79)); // about as loud as a real song
+        write(music.resolve("game.wav"), loop(new double[][] { { 220, 262, 330 }, { 196, 247, 294 }, { 175, 220, 262 }, { 196, 247, 294 } }, 140, 0.79)); // about as loud as a real song
+        write(music.resolve("victory.wav"), loop(new double[][] { { 262, 330, 392 }, { 349, 440, 523 }, { 392, 494, 587 }, { 262, 330, 392 } }, 110, 0.79)); // about as loud as a real song
     }
 
     enum Wave { SINE, SQUARE }
@@ -136,6 +140,47 @@ public class GenPlaceholderSounds {
             }
             double click = i < 200 ? (RNG.nextDouble() * 2 - 1) * (1 - i / 200.0) : 0;
             out[i] = s * 0.6 + click * 0.5;
+        }
+        return out;
+    }
+
+    /** A short "woof": a falling growly tone with some noise. */
+    static double[] woof(double seconds) {
+        int n = (int) (seconds * RATE);
+        double[] out = new double[n];
+        double phase = 0;
+        for (int i = 0; i < n; i++) {
+            double p = i / (double) n;
+            phase += 2 * Math.PI * (520 - 300 * p) / RATE;
+            double growl = Math.signum(Math.sin(phase)) * 0.35 + Math.sin(phase * 2) * 0.25;
+            out[i] = (growl + (RNG.nextDouble() * 2 - 1) * 0.2) * Math.sin(Math.PI * p) * 0.8;
+        }
+        return out;
+    }
+
+    /** Wet low squish: low-passed noise with a quick wobble. */
+    static double[] squish(double seconds) {
+        int n = (int) (seconds * RATE);
+        double[] out = new double[n];
+        double lp = 0;
+        for (int i = 0; i < n; i++) {
+            double p = i / (double) n;
+            lp += 0.06 * ((RNG.nextDouble() * 2 - 1) - lp);
+            double wobble = 1 + 0.5 * Math.sin(2 * Math.PI * 18 * p * seconds);
+            out[i] = lp * 4.0 * wobble * Math.pow(1 - p, 1.5);
+        }
+        return out;
+    }
+
+    /** Falling "wheee" for slipping on trash. */
+    static double[] slide(double seconds) {
+        int n = (int) (seconds * RATE);
+        double[] out = new double[n];
+        double phase = 0;
+        for (int i = 0; i < n; i++) {
+            double p = i / (double) n;
+            phase += 2 * Math.PI * (900 - 650 * p) / RATE;
+            out[i] = Math.sin(phase) * 0.4 * (1 - p * 0.6);
         }
         return out;
     }

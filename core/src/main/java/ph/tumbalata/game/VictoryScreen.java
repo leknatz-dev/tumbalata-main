@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
@@ -49,6 +50,12 @@ public class VictoryScreen implements Screen {
     private static final float TITLE_BOB_AMOUNT = 7f;
     private static final float TITLE_BOB_SPEED = 2.5f;
 
+    // --- AWARDS (one at a time under the podium, after the winner is revealed) ---
+    private static final float AWARD_SECONDS = 2.6f;   // each award is shown this long
+    private static final float AWARD_FADE = 0.3f;
+    private static final float AWARD_Y = 60f;
+    private static final float HINT_Y = 22f;
+
     private final TumbalataGame game;
     private final int playerCount;
     private final int[] scores;
@@ -56,6 +63,7 @@ public class VictoryScreen implements Screen {
     private final int[] places;       // places[slot] = shared rank (0 = 1st); tied scores share a place
     private final String winnerText;  // "PLAYER 2 WINS!" or "P1 & P3 WIN!"
     private final Color[] colors;     // placeholder color per player
+    private final Array<Awards.Award> awards;
 
     private OrthographicCamera camera;
     private Viewport viewport;
@@ -76,7 +84,13 @@ public class VictoryScreen implements Screen {
      * @param characters the character each player picked (used for their placeholder color)
      */
     public VictoryScreen(TumbalataGame game, int[] scores, int[] characters) {
+        this(game, scores, characters, new Array<>());
+    }
+
+    /** @param awards end-of-match awards to show under the podium (may be empty) */
+    public VictoryScreen(TumbalataGame game, int[] scores, int[] characters, Array<Awards.Award> awards) {
         this.game = game;
+        this.awards = awards;
         this.playerCount = MathUtils.clamp(scores.length, 1, 4);
         this.scores = new int[this.playerCount];
         for (int i = 0; i < this.playerCount; i++) {
@@ -257,6 +271,12 @@ public class VictoryScreen implements Screen {
                 }
             }
         }
+        // dark band behind the award line, so it reads on any background
+        float awardTime = time - revealEndTime();
+        if (awards.size > 0 && awardTime >= 0f) {
+            shapeRenderer.setColor(0f, 0f, 0f, 0.6f * awardAlpha(awardTime));
+            shapeRenderer.rect(0f, AWARD_Y - 21f, MENU_WIDTH, 28f);
+        }
         shapeRenderer.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
 
@@ -296,11 +316,34 @@ public class VictoryScreen implements Screen {
         if (time >= revealEndTime()) {
             drawCentered(winnerText, MENU_WIDTH / 2f, 395f, 1.8f, Color.WHITE);
             if (((int) (time * 2f)) % 2 == 0) { // blinking hint
-                drawCentered("PRESS ENTER TO CONTINUE", MENU_WIDTH / 2f, 40f, 1.1f, Color.LIGHT_GRAY);
+                drawCentered("PRESS ENTER TO CONTINUE", MENU_WIDTH / 2f, HINT_Y, 1.1f, Color.LIGHT_GRAY);
             }
+            drawAward(time - revealEndTime());
         }
 
         batch.end();
+    }
+
+    /** Opacity of the current award: fades in and out within its time slot. */
+    private static float awardAlpha(float t) {
+        float local = t % AWARD_SECONDS;
+        return Math.min(1f, Math.min(local, AWARD_SECONDS - local) / AWARD_FADE);
+    }
+
+    /** The current award, cycling through all of them; fades in and out. {@code t} = seconds since the reveal. */
+    private void drawAward(float t) {
+        if (awards.size == 0 || t < 0f) return;
+        int index = (int) (t / AWARD_SECONDS) % awards.size;
+        float alpha = awardAlpha(t);
+        Awards.Award a = awards.get(index);
+
+        String line = a.title + "  " + a.winnerNames() + "  (" + a.detail + ")";
+        font.getData().setScale(1.25f);
+        layout.setText(font, line);
+        font.setColor(1f, 0.85f, 0.3f, alpha);
+        font.draw(batch, line, (MENU_WIDTH - layout.width) / 2f, AWARD_Y);
+        font.getData().setScale(1f);
+        font.setColor(Color.WHITE);
     }
 
     private void drawCentered(String text, float cx, float y, float scale, Color color) {

@@ -47,7 +47,12 @@ public final class Audio {
         THROW("throw", 0.7f),                 // slipper thrown / can tossed
         CAN_HIT("can_hit", 0.9f),             // slipper knocks the can, or Taya's can lands on a slipper
         TAG("tag", 0.9f),
-        SCORE("score", 0.6f);
+        SCORE("score", 0.6f),
+        // Street events
+        TRASH_LAND("trash_land", 0.7f),       // trash lands on the court
+        SLIP("slip", 0.8f),                   // a player slips on trash
+        DOG_BARK("dog_bark", 0.8f),           // a stray dog trots onto the court
+        POOP_SQUISH("poop_squish", 0.9f);     // a player steps in the dog's poop
 
         final String file;
         final float volume;
@@ -58,18 +63,34 @@ public final class Audio {
         }
     }
 
-    /** Looping background music. */
+    /** Looping music. The volume (0..1) balances the tracks against each other, e.g. when a song is mastered louder. */
     public enum Track {
-        MENU("menu"),
-        GAME("game"),
-        VICTORY("victory");
+        MENU("menu", 1f),
+        GAME("game", 1f),
+        VICTORY("victory", 1f);
 
         final String file;
+        final float volume;
 
-        Track(String file) {
+        Track(String file, float volume) {
             this.file = file;
+            this.volume = volume;
         }
     }
+
+    // Default volumes (0..1). Saved values (Preferences) win once a settings screen changes them.
+    private static final float DEFAULT_MASTER = 1f;
+    private static final float DEFAULT_MUSIC = 0.15f;
+    private static final float DEFAULT_SFX = 0.9f;
+    /** The background layer plays this much quieter than the main music. */
+    private static final float BACKGROUND_LEVEL = 0.2f;
+
+    // Preference keys. The volume keys were renamed so that volumes saved by older builds (which wrote them whenever
+    // M was pressed) no longer override the defaults above.
+    private static final String KEY_MASTER = "volume.master";
+    private static final String KEY_MUSIC = "volume.music";
+    private static final String KEY_SFX = "volume.sfx";
+    private static final String KEY_MUTED = "muted";
 
     private final EnumMap<Sfx, Sound> sounds = new EnumMap<>(Sfx.class);
     private final Preferences prefs;
@@ -79,18 +100,16 @@ public final class Audio {
     private float sfxVolume;
     private boolean muted;
 
-    // Music: the playing track fades out, then the wanted one is loaded and fades in
-    private Track currentTrack;
-    private Music currentMusic;
-    private Track wantedTrack;
-    private float fade = 1f; // 0..1 volume multiplier of the current track
+    // Two music layers: the main track, and an optional quieter one underneath (e.g. the menu song during a match)
+    private final MusicChannel main = new MusicChannel(1f);
+    private final MusicChannel background = new MusicChannel(BACKGROUND_LEVEL);
 
     public Audio() {
         prefs = Gdx.app.getPreferences(PREFS_NAME);
-        masterVolume = prefs.getFloat("masterVolume", 1f);
-        musicVolume = prefs.getFloat("musicVolume", 0.6f);
-        sfxVolume = prefs.getFloat("sfxVolume", 0.9f);
-        muted = prefs.getBoolean("muted", false);
+        masterVolume = prefs.getFloat(KEY_MASTER, DEFAULT_MASTER);
+        musicVolume = prefs.getFloat(KEY_MUSIC, DEFAULT_MUSIC);
+        sfxVolume = prefs.getFloat(KEY_SFX, DEFAULT_SFX);
+        muted = prefs.getBoolean(KEY_MUTED, false);
 
         for (Sfx sfx : Sfx.values()) {
             FileHandle file = find(SFX_DIR, sfx.file);
@@ -139,50 +158,76 @@ public final class Audio {
     // Music
     // ------------------------------------------------------------------
 
-    /** Switches to this track (fading), or keeps playing if it is already the current one. */
+    /** Switches the main music to this track (fading), or keeps playing if it is already the current one. */
     public void playMusic(Track track) {
-        wantedTrack = track;
+        main.wanted = track;
     }
 
-    /** Fades the music out and stays silent. */
+    /** Plays a track quietly underneath the main music (null = none). */
+    public void playBackgroundMusic(Track track) {
+        background.wanted = track;
+    }
+
+    /** Fades all music out and stays silent. */
     public void stopMusic() {
-        wantedTrack = null;
+        main.wanted = null;
+        background.wanted = null;
     }
 
     /** Call once per frame (handles the music fades). */
     public void update(float delta) {
-        if (wantedTrack != currentTrack) {
-            if (currentMusic != null && fade > 0f) {
-                fade = Math.max(0f, fade - delta / MUSIC_FADE_SECONDS); // fade the old track out first
-            } else {
-                switchTo(wantedTrack);
-            }
-        } else if (currentMusic != null && fade < 1f) {
-            fade = Math.min(1f, fade + delta / MUSIC_FADE_SECONDS);
-        }
-        if (currentMusic != null) currentMusic.setVolume(effectiveMusicVolume() * fade);
+        main.update(delta);
+        background.update(delta);
     }
 
-    private void switchTo(Track track) {
-        if (currentMusic != null) {
-            currentMusic.stop();
-            currentMusic.dispose();
-            currentMusic = null;
-        }
-        currentTrack = track;
-        fade = 0f;
-        if (track == null) return;
+    /** One music layer: the playing track fades out, then the wanted one is loaded and fades in. */
+    private final class MusicChannel {
+        final float level;
+        Track current, wanted;
+        Music music;
+        float fade = 1f; // 0..1 volume multiplier of the current track
 
-        FileHandle file = find(MUSIC_DIR, track.file);
-        if (file == null) return;
-        try {
-            currentMusic = Gdx.audio.newMusic(file);
-            currentMusic.setLooping(true);
-            currentMusic.setVolume(0f);
-            currentMusic.play();
-        } catch (Exception e) {
-            Gdx.app.error("Audio", "Could not load " + file.path() + ": " + e.getMessage());
-            currentMusic = null;
+        MusicChannel(float level) {
+            this.level = level;
+        }
+
+        void update(float delta) {
+            if (wanted != current) {
+                if (music != null && fade > 0f) {
+                    fade = Math.max(0f, fade - delta / MUSIC_FADE_SECONDS); // fade the old track out first
+                } else {
+                    switchTo(wanted);
+                }
+            } else if (music != null && fade < 1f) {
+                fade = Math.min(1f, fade + delta / MUSIC_FADE_SECONDS);
+            }
+            if (music != null) music.setVolume(effectiveMusicVolume() * current.volume * level * fade);
+        }
+
+        private void switchTo(Track track) {
+            release();
+            current = track;
+            fade = 0f;
+            if (track == null) return;
+
+            FileHandle file = find(MUSIC_DIR, track.file);
+            if (file == null) return;
+            try {
+                music = Gdx.audio.newMusic(file);
+                music.setLooping(true);
+                music.setVolume(0f);
+                music.play();
+            } catch (Exception e) {
+                Gdx.app.error("Audio", "Could not load " + file.path() + ": " + e.getMessage());
+                music = null;
+            }
+        }
+
+        void release() {
+            if (music == null) return;
+            music.stop();
+            music.dispose();
+            music = null;
         }
     }
 
@@ -195,10 +240,17 @@ public final class Audio {
     public float getSfxVolume() { return sfxVolume; }
     public boolean isMuted() { return muted; }
 
-    public void setMasterVolume(float v) { masterVolume = MathUtils.clamp(v, 0f, 1f); save(); }
-    public void setMusicVolume(float v) { musicVolume = MathUtils.clamp(v, 0f, 1f); save(); }
-    public void setSfxVolume(float v) { sfxVolume = MathUtils.clamp(v, 0f, 1f); save(); }
-    public void setMuted(boolean m) { muted = m; save(); }
+    public void setMasterVolume(float v) { masterVolume = MathUtils.clamp(v, 0f, 1f); saveVolumes(); }
+    public void setMusicVolume(float v) { musicVolume = MathUtils.clamp(v, 0f, 1f); saveVolumes(); }
+    public void setSfxVolume(float v) { sfxVolume = MathUtils.clamp(v, 0f, 1f); saveVolumes(); }
+
+    /** Mute on/off is saved on its own, so muting never freezes the current volumes into the saved settings. */
+    public void setMuted(boolean m) {
+        muted = m;
+        prefs.putBoolean(KEY_MUTED, muted);
+        prefs.flush();
+    }
+
     public void toggleMute() { setMuted(!muted); }
 
     private float effectiveSfxVolume() {
@@ -209,21 +261,17 @@ public final class Audio {
         return muted ? 0f : masterVolume * musicVolume;
     }
 
-    private void save() {
-        prefs.putFloat("masterVolume", masterVolume);
-        prefs.putFloat("musicVolume", musicVolume);
-        prefs.putFloat("sfxVolume", sfxVolume);
-        prefs.putBoolean("muted", muted);
+    private void saveVolumes() {
+        prefs.putFloat(KEY_MASTER, masterVolume);
+        prefs.putFloat(KEY_MUSIC, musicVolume);
+        prefs.putFloat(KEY_SFX, sfxVolume);
         prefs.flush();
     }
 
     public void dispose() {
         for (Sound s : sounds.values()) s.dispose();
         sounds.clear();
-        if (currentMusic != null) {
-            currentMusic.stop();
-            currentMusic.dispose();
-            currentMusic = null;
-        }
+        main.release();
+        background.release();
     }
 }

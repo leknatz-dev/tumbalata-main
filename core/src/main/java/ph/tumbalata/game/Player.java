@@ -42,6 +42,14 @@ public class Player {
     private float minX, maxX, minY, maxY;
     private boolean moving = false;
 
+    // Slipped on trash: slides for slideTime, then is stunned for stunTime. No control the whole time.
+    public static final float SLIDE_SECONDS = 0.45f;
+    public static final float STUN_SECONDS = 1.0f;
+    private static final float SLIDE_SPEED = 320f;
+    private float slideTime = 0f;
+    private float stunTime = 0f;
+    private final Vector2 slideVelocity = new Vector2();
+
     public float width = 48f;
     public float height = 48f;
 
@@ -117,6 +125,59 @@ public class Player {
 
         position.x = Math.max(minX, Math.min(maxX, position.x));
         position.y = Math.max(minY, Math.min(maxY, position.y));
+    }
+
+    /** Slips: slides along (dirX, dirY) (normalized here), then is stunned. */
+    public void slip(float dirX, float dirY) {
+        float len = (float) Math.sqrt(dirX * dirX + dirY * dirY);
+        if (len == 0f) {
+            dirX = facingRight ? 1f : -1f;
+            dirY = 0f;
+            len = 1f;
+        }
+        slideVelocity.set(dirX / len * SLIDE_SPEED, dirY / len * SLIDE_SPEED);
+        slideTime = SLIDE_SECONDS;
+        stunTime = STUN_SECONDS;
+        moving = false;
+        velocity.set(0, 0);
+    }
+
+    /** Stunned on the spot (no slide), e.g. after stepping in dog poop. */
+    public void stun(float seconds) {
+        slideTime = 0f;
+        stunTime = seconds;
+        moving = false;
+        velocity.set(0, 0);
+    }
+
+    /** Sliding or stunned: this player can't move, pick things up, throw or tag. */
+    public boolean isStunned() {
+        return slideTime > 0f || stunTime > 0f;
+    }
+
+    /** True while stunned after the slide (for the dizzy stars). */
+    public boolean isDizzy() {
+        return slideTime <= 0f && stunTime > 0f;
+    }
+
+    /** One frame of slipping: slides (slowing down, inside the bounds), then counts the stun down. */
+    public void updateSlip(float delta) {
+        if (slideTime > 0f) {
+            float t = slideTime / SLIDE_SECONDS; // 1 -> 0, so the slide slows down
+            position.add(slideVelocity.x * t * delta, slideVelocity.y * t * delta);
+            position.x = Math.max(minX, Math.min(maxX, position.x));
+            position.y = Math.max(minY, Math.min(maxY, position.y));
+            slideTime -= delta;
+        } else if (stunTime > 0f) {
+            stunTime -= delta;
+        }
+        moving = false;
+        velocity.set(0, 0);
+    }
+
+    public void clearSlip() {
+        slideTime = 0f;
+        stunTime = 0f;
     }
 
     /** Stands still this frame (no movement, idle animation). */

@@ -80,6 +80,15 @@ public final class Signs {
         return current != null;
     }
 
+    /** 0..1: how much the court behind the sign should blur. Eases in as the sign pops in and out as it fades. */
+    public float blurAmount() {
+        if (current == null) return 0f;
+        float in = Math.min(1f, age / POP_IN);
+        float fadeStart = current.duration - FADE_OUT;
+        float out = age > fadeStart ? 1f - (age - fadeStart) / FADE_OUT : 1f;
+        return MathUtils.clamp(Math.min(in, out), 0f, 1f);
+    }
+
     public void update(float delta) {
         if (current == null) return;
         age += delta;

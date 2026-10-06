@@ -19,10 +19,12 @@ class MatchTest {
     private Match match;
     private Array<Player> players;
 
-    private Match newMatch(int playerCount) {
+    /** @param characters picked character per player (default: everyone character 0) */
+    private Match newMatch(int playerCount, int... characters) {
         players = new Array<>();
         for (int id = 0; id < playerCount; id++) {
-            Player p = new Player(id, 0, 0f, 0f, GameConstants.PLAYER_SPEED, new PlayerInput(),
+            int character = id < characters.length ? characters[id] : 0;
+            Player p = new Player(id, character, 0f, 0f, GameConstants.PLAYER_SPEED, new PlayerInput(),
                 Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y, null, null, null);
             p.slipper = new Slipper(0f, 0f);
             players.add(p);
@@ -441,6 +443,263 @@ class MatchTest {
         taya.input.moveY = 0f;
         assertEquals(Match.PLAY_MIN_Y, taya.position.y, 0.01f, "only the walls (or the art edge) stop players now");
         assertTrue(taya.position.y < 0f, "below the old y=20 limit");
+    }
+
+    // ------------------------------------------------------------------
+    // Street event: trash
+    // ------------------------------------------------------------------
+
+    /** Walks p right until they slip on trash dropped just ahead of their feet. */
+    private Trash walkIntoTrash(Player p) {
+        Trash t = match.dropTrash(p.position.x + 20f, p.position.y + Match.FEET_OFFSET_Y);
+        p.input.moveX = 1f;
+        stepUntil(p::isStunned, DT, 1f);
+        p.input.moveX = 0f;
+        return t;
+    }
+
+    @Test
+    void steppingOnTrashSlidesStunsAndUsesItUp() {
+        newMatch(2);
+        StringBuilder log = new StringBuilder();
+        match.setEvents(new Match.Events() {
+            @Override public void slipped(Player player, Trash trash) { log.append("slipped P").append(player.id + 1); }
+        });
+        Player taya = match.taya();
+        float startX = taya.position.x;
+        walkIntoTrash(taya);
+
+        assertEquals("slipped P2", log.toString());
+        assertEquals(0, match.trash().size, "used up");
+        assertEquals(1, match.stats().slips[taya.id]);
+
+        stepFor(Player.SLIDE_SECONDS + 0.05f);
+        assertTrue(taya.position.x > startX + 40f, "slid along the way it was walking");
+        assertTrue(taya.isDizzy());
+
+        float x = taya.position.x;
+        taya.input.moveX = -1f;
+        stepFor(0.5f);
+        assertEquals(x, taya.position.x, 0.01f, "no control while stunned");
+        stepFor(Player.STUN_SECONDS);
+        assertFalse(taya.isStunned());
+        assertTrue(taya.position.x < x, "moves again once the stun wears off");
+    }
+
+    @Test
+    void standingStillOnTrashDoesNotSlip() {
+        newMatch(2);
+        Player taya = match.taya();
+        match.dropTrash(taya.position.x, taya.position.y + Match.FEET_OFFSET_Y);
+        stepFor(1f);
+        assertFalse(taya.isStunned());
+        assertEquals(1, match.trash().size);
+    }
+
+    @Test
+    void stunnedTayaCannotTagButAStunnedThrowerCanBeTagged() {
+        newMatch(2);
+        knockCanAndPickUpSlipper();
+        tayaPicksUpCan();
+        tayaPutsCanBack();
+        Player taya = match.taya();
+
+        walkIntoTrash(taya);
+        stepFor(Player.SLIDE_SECONDS + 0.05f);
+        p(0).position.set(taya.position);
+        step(DT);
+        assertSame(taya, match.taya(), "a stunned Taya can't tag");
+
+        stepFor(Player.STUN_SECONDS);
+        p(0).position.set(Match.THROW_LINE_X + 300f, 150f);
+        walkIntoTrash(p(0));                                 // now the Thrower slips, past the line
+        taya.position.set(p(0).position);
+        step(DT);
+        assertSame(p(0), match.taya(), "a stunned Thrower is still caught");
+    }
+
+    @Test
+    void trashFadesAwayAfterItsLifetime() {
+        newMatch(2);
+        match.dropTrash(600f, 100f);
+        stepFor(Trash.LIFETIME_SECONDS - 0.5f);
+        assertEquals(1, match.trash().size);
+        stepFor(1f);
+        assertEquals(0, match.trash().size);
+    }
+
+    @Test
+    void streetEventsThrowTrashNeverMoreThanTheLimit() {
+        newMatch(3);
+        int[] incoming = new int[1], landed = new int[1];
+        match.setEvents(new Match.Events() {
+            @Override public void trashIncoming(Trash t) { incoming[0]++; }
+            @Override public void trashLanded(Trash t) { landed[0]++; }
+        });
+        match.setStreetEvents(true, 42L);
+        for (int i = 0; i < Math.round(120f / DT); i++) {
+            step(DT);
+            assertTrue(match.trash().size <= Match.TRASH_MAX);
+        }
+        assertTrue(landed[0] >= 4, "about one every 15-25 s, got " + landed[0]);
+        assertTrue(incoming[0] >= landed[0]);
+    }
+
+    @Test
+    void strayDogPoopsOnceAndThePoopStaysUntilSteppedIn() {
+        newMatch(2);
+        StringBuilder log = new StringBuilder();
+        match.setEvents(new Match.Events() {
+            @Override public void dogArrived(StrayDog dog) { log.append("dog "); }
+            @Override public void dogPooped(StrayDog dog) { log.append("poop "); }
+        });
+        match.setStreetEvents(true, 7L);
+        stepUntil(() -> match.poop() != null, DT, 60f);
+        stepUntil(() -> match.dog() == null, DT, 15f);
+        assertEquals("dog poop ", log.toString());
+
+        Vector2 spot = new Vector2(match.poop());
+        stepFor(120f); // never fades, and no second dog while it is there
+        assertEquals(spot, match.poop());
+        assertEquals("dog poop ", log.toString());
+    }
+
+    @Test
+    void steppingInPoopStunsOnTheSpotAndRemovesIt() {
+        newMatch(2);
+        Player taya = match.taya();
+        match.dropPoop(taya.position.x + 20f, taya.position.y + Match.FEET_OFFSET_Y);
+        taya.input.moveX = 1f;
+        stepUntil(taya::isStunned, DT, 1f);
+        float x = taya.position.x;
+        stepFor(0.5f);
+        assertEquals(x, taya.position.x, 0.01f, "no slide, just stunned");
+        assertTrue(taya.isDizzy());
+        assertEquals(null, match.poop());
+        assertEquals(1, match.stats().poopSteps[taya.id]);
+        stepFor(Match.POOP_STUN_SECONDS);
+        assertFalse(taya.isStunned());
+    }
+
+    @Test
+    void noTrashWhenStreetEventsAreOff() {
+        newMatch(2);
+        stepFor(60f);
+        assertEquals(0, match.trash().size);
+    }
+
+    // ------------------------------------------------------------------
+    // Character traits and stats
+    // ------------------------------------------------------------------
+
+    @Test
+    void traitsMultiplyTheRoleSpeedOnlyWhenEnabled() {
+        newMatch(2, 0, 1); // P1 FAST, P2 STRONG
+        assertEquals(GameConstants.PLAYER_SPEED, p(0).speed, 0.01f, "traits are off by default");
+
+        match.setCharacterTraits(true);
+        assertEquals(GameConstants.PLAYER_SPEED * Characters.SPEED[0], p(0).speed, 0.01f);
+        assertEquals(GameConstants.TAYA_SPEED * Characters.SPEED[1], p(1).speed, 0.01f, "Taya keeps its own base speed");
+        assertTrue(p(0).speed > GameConstants.PLAYER_SPEED);
+    }
+
+    @Test
+    void strongCharacterThrowsHarder() {
+        newMatch(2, 1, 0); // P1 STRONG
+        match.setCharacterTraits(true);
+        throwRight(p(0), 50f);
+        float expected = 50f * 18f * Characters.THROW[1];
+        assertEquals(expected, p(0).slipper.velocity.len(), expected * 0.03f);
+    }
+
+    @Test
+    void accurateCharacterHasASlowerAimMeter() {
+        float[] angles = new float[2];
+        for (int run = 0; run < 2; run++) {
+            newMatch(2, 2, 0); // P1 ACCURATE
+            match.setCharacterTraits(run == 1);
+            pressA(p(0), DT);
+            stepFor(0.1f);
+            angles[run] = Math.abs(match.angle());
+        }
+        assertTrue(angles[1] < angles[0] * 0.85f, "normal " + angles[0] + ", accurate " + angles[1]);
+    }
+
+    @Test
+    void traitStaysWithThePlayerWhenTheyBecomeTaya() {
+        newMatch(2, 2, 0); // P1 ACCURATE (Thrower), P2 FAST (Taya)
+        match.setCharacterTraits(true);
+        float aim = Characters.AIM[2];
+
+        // P1 knocks the can, Taya puts it back and tags P1: P1 becomes Taya
+        knockCanAndPickUpSlipper();
+        tayaPicksUpCan();
+        tayaPutsCanBack();
+        Vector2 outside = new Vector2(Match.THROW_LINE_X + 200f, 200f);
+        p(0).position.set(outside);
+        match.taya().position.set(outside);
+        step(DT);
+        assertSame(p(0), match.taya());
+        assertEquals(GameConstants.TAYA_SPEED * Characters.SPEED[2], p(0).speed, 0.01f, "P1 is still ACCURATE");
+        assertEquals(GameConstants.PLAYER_SPEED * Characters.SPEED[0], p(1).speed, 0.01f, "P2 is still FAST");
+
+        // P2 misses, so P1 (now Taya) aims the toss: the arrow turns at 200 deg/s, slowed by P1's trait
+        throwRight(p(1), 10f);
+        stepUntil(() -> match.mode() == Match.RoundMode.TAYA_TOSS, DT, 10f);
+        tayaPicksUpCan();
+        pressA(p(0), DT);
+        stepFor(0.1f);
+        assertEquals((0.1f + DT) * 200f * aim, match.angle(), 2f, "slower aim as Taya too");
+    }
+
+    @Test
+    void sneakyCharacterReachesTheirSlipperFromFurther() {
+        newMatch(2, 3, 0); // P1 SNEAKY
+        throwRight(p(0), 90f);
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
+        stepFor(3f);
+        p(0).position.set(p(0).slipper.position).add(Match.SLIPPER_PICKUP_DISTANCE + 10f, 0f);
+        assertFalse(match.canPickUpSlipper(p(0)), "too far for a normal reach");
+        match.setCharacterTraits(true);
+        assertTrue(match.canPickUpSlipper(p(0)));
+    }
+
+    @Test
+    void statsCountKnocksTagsAndCatches() {
+        newMatch(2);
+        knockCanAndPickUpSlipper();
+        assertEquals(1, match.stats().knocks[0]);
+
+        tayaPicksUpCan();
+        tayaPutsCanBack();
+        Vector2 outside = new Vector2(Match.THROW_LINE_X + 200f, 200f);
+        p(0).position.set(outside);
+        match.taya().position.set(outside);
+        step(DT);
+        assertEquals(1, match.stats().tags[1]);
+        assertEquals(1, match.stats().caught[0]);
+    }
+
+    @Test
+    void restartRoundPutsEveryoneBackWithTheSameRoles() {
+        newMatch(3);
+        Player taya = match.taya();
+        throwRight(p(0), 30f);
+        match.restartRound();
+        assertSame(taya, match.taya(), "same Taya");
+        assertFalse(p(0).hasThrown);
+        assertTrue(p(0).hasSlipper);
+        assertSame(p(0), match.nextThrower(), "same Thrower goes first");
+        assertEquals(Match.RoundMode.THROWING, match.mode());
+    }
+
+    @Test
+    void selectNoLongerRestartsTheRound() {
+        newMatch(2);
+        throwRight(p(0), 30f);
+        p(0).input.selectPressed = true; // Select opens the pause menu now (GameScreen), not a restart
+        step(DT);
+        assertTrue(p(0).hasThrown);
     }
 
     @Test
