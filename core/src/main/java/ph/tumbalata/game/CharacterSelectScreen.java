@@ -74,6 +74,7 @@ public class CharacterSelectScreen implements Screen {
     private ShapeRenderer shapeRenderer;
     private BitmapFont font;
     private final GlyphLayout layout = new GlyphLayout();
+    private ControlHints hints;
 
     private Texture background;
     private MenuBackdrop backdrop; // shared live background (null = use the image background)
@@ -142,6 +143,7 @@ public class CharacterSelectScreen implements Screen {
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
         font = Fonts.create();
+        hints = new ControlHints();
         for (int p = 0; p < playerCount; p++) {
             layout.setText(font, names[p]);
             tagWidths[p] = Math.max(TAG_W, layout.width + 10f);
@@ -270,11 +272,11 @@ public class CharacterSelectScreen implements Screen {
         }
         font.setColor(Color.WHITE);
 
-        String hint = allLocked() ? "GET READY!"
-            : takenMessageTime > 0f ? takenMessage
-            : "MOVE TO CHOOSE   A: LOCK IN   B: CHANGE";
-        layout.setText(font, hint);
-        font.draw(batch, hint, (MENU_WIDTH - layout.width) / 2f, HINT_Y);
+        String message = allLocked() ? "GET READY!" : takenMessageTime > 0f ? takenMessage : null;
+        if (message != null) { // otherwise the controller hints are drawn below, after the batch
+            layout.setText(font, message);
+            font.draw(batch, message, (MENU_WIDTH - layout.width) / 2f, HINT_Y);
+        }
 
         if (slipperTexture != null) {
             float sw = slipperTexture.getWidth();
@@ -282,6 +284,10 @@ public class CharacterSelectScreen implements Screen {
             batch.draw(slipperTexture, sel.x + (CARD_W - sw) / 2f, sel.y + STATS_Y - 6f - SLIPPER_GAP - sh + bob, sw, sh);
         }
         batch.end();
+        if (message == null) {
+            hints.draw(batch, shapeRenderer, font, MENU_WIDTH / 2f, HINT_Y - 6f, 1f,
+                ControlHints.Icon.DPAD_LEFT_RIGHT, "CHOOSE", ControlHints.Icon.A, "LOCK IN", ControlHints.Icon.B, "CHANGE");
+        }
     }
 
     /** Big art is shrunk a lot to fit the box: smooth filtering keeps it clean (small pixel art stays sharp). */
@@ -465,5 +471,6 @@ public class CharacterSelectScreen implements Screen {
             if (portraits[i] != null) { portraits[i].dispose(); portraits[i] = null; }
         }
         if (sharedPortrait != null) { sharedPortrait.dispose(); sharedPortrait = null; }
+        if (hints != null) { hints.dispose(); hints = null; }
     }
 }

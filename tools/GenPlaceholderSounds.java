@@ -42,6 +42,7 @@ public class GenPlaceholderSounds {
         write(sfx.resolve("sign_choose_spot.wav"), chord(new double[] { 1047, 1319 }, 0.35));
         write(sfx.resolve("sign_tagged.wav"), concat(tone(330, 0.1, 0.5, Wave.SQUARE), tone(220, 0.18, 0.5, Wave.SQUARE)));
         write(sfx.resolve("sign_streak.wav"), arpeggio(new double[] { 523, 659, 784, 1047 }, 0.06, 0.16));
+        write(sfx.resolve("dialogue_blip.wav"), tone(700, 0.035, 0.4, Wave.SQUARE)); // pitched per character in game
 
         // Music loops (8 bars of simple arpeggios)
         write(music.resolve("menu.wav"), loop(new double[][] { { 262, 330, 392 }, { 220, 262, 330 }, { 175, 220, 262 }, { 196, 247, 294 } }, 100, 0.79)); // about as loud as a real song
