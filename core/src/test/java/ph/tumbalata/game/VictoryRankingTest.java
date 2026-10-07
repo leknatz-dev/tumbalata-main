@@ -32,4 +32,15 @@ class VictoryRankingTest {
         int[] order = VictoryScreen.orderByScore(scores);
         assertEquals("P1 & P3 WIN!", VictoryScreen.winnerText(order, VictoryScreen.places(scores, order)));
     }
+
+    @Test
+    void winnerTextUsesPlayerNames() {
+        int[] scores = { 5, 9, 9 };
+        int[] order = VictoryScreen.orderByScore(scores);
+        int[] places = VictoryScreen.places(scores, order);
+        assertEquals("JOJO & KIM WIN!", VictoryScreen.winnerText(order, places, new String[] { "MAYA", "JOJO", "KIM" }));
+        int[] solo = { 1, 0 };
+        int[] o2 = VictoryScreen.orderByScore(solo);
+        assertEquals("MAYA WINS!", VictoryScreen.winnerText(o2, VictoryScreen.places(solo, o2), new String[] { "MAYA", "JOJO" }));
+    }
 }

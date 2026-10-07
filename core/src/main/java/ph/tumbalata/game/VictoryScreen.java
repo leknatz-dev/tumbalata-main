@@ -28,15 +28,16 @@ public class VictoryScreen implements Screen {
     private static final int MENU_WINDOW_H = 500;
 
     // --- ASSET FILES (all optional - placeholders are drawn if missing) ---
-    private static final String BACKGROUND_FILE = "victory_background.png";
-    private static final String FALLBACK_BACKGROUND_FILE = "menu_background.png";
+    // Background: the same live map as the main menu (shared MenuBackdrop); this image only if that can't load
+    private static final String BACKGROUND_FILE = "menu_background.png";
+    private static final float BACKDROP_DIM = 0.35f; // same darkening as the main menu
     private static final String TITLE_FILE = "victory_title.png";
 
     // --- PODIUM LAYOUT (index = rank: 0 = 1st place) ---
     private static final float BASE_Y = 70f;                                          // ground line of the podium
     private static final float[] SLOT_CENTER_X = { 350f, 190f, 500f, 610f };          // 1st is in the exact middle
     private static final float[] BLOCK_W       = { 120f,  90f,  90f,  70f };          // 1st is the widest...
-    private static final float[] BLOCK_H       = { 200f, 140f, 100f,  70f };          // ...and the tallest
+    private static final float[] BLOCK_H       = { 150f, 105f,  75f,  52f };          // ...and the tallest
     private static final float[] FIGURE_SCALE  = { 1.5f, 1.15f, 1.0f, 0.85f };        // ...with the biggest character
     private static final String[] RANK_LABELS  = { "1ST", "2ND", "3RD", "4TH" };
 
@@ -46,7 +47,7 @@ public class VictoryScreen implements Screen {
     private static final float POP_TIME = 0.3f;        // character "pop in" after its block has risen
     private static final float INPUT_DELAY = 1.0f;     // ignore keys at first so a button mash in the game can't skip this
 
-    private static final float TITLE_CENTER_Y = 440f;
+    private static final float TITLE_CENTER_Y = 458f;
     private static final float TITLE_BOB_AMOUNT = 7f;
     private static final float TITLE_BOB_SPEED = 2.5f;
 
@@ -62,7 +63,16 @@ public class VictoryScreen implements Screen {
     private final int[] order;        // order[slot] = player index (slot 0 = highest score, middle of the podium)
     private final int[] places;       // places[slot] = shared rank (0 = 1st); tied scores share a place
     private final String winnerText;  // "PLAYER 2 WINS!" or "P1 & P3 WIN!"
+    private final String[] names;     // names[player]
     private final Color[] colors;     // placeholder color per player
+    private final int[] picks;        // picks[player] = character index (for the sprite and its colours)
+
+    // Podium figures: the front-facing standing frame of the walk sheets, tinted like in the match. 1st place holds
+    // the slipper (its white pixels drawn in the player's colour). Falls back to drawn figures if the sheets are missing.
+    private static final float SPRITE_SCALE = 2.5f;        // 24 px frame drawn at 60 px (times the rank's FIGURE_SCALE)
+    private static final int TOP_ROW_DEFAULT = 8;          // first drawn row of the plain frame (from the top)
+    private static final int TOP_ROW_SLIPPER = 0;          // the slipper frame reaches the top (slipper on the head)
+    private Texture walkSheet, slipperBody, slipperOverlay;
     private final Array<Awards.Award> awards;
 
     private OrthographicCamera camera;
@@ -73,6 +83,7 @@ public class VictoryScreen implements Screen {
     private final GlyphLayout layout = new GlyphLayout();
 
     private Texture background;
+    private MenuBackdrop backdrop; // shared with the menus, owned by TumbalataGame
     private Texture titleTexture;
 
     private float time = 0f;
@@ -84,11 +95,12 @@ public class VictoryScreen implements Screen {
      * @param characters the character each player picked (used for their placeholder color)
      */
     public VictoryScreen(TumbalataGame game, int[] scores, int[] characters) {
-        this(game, scores, characters, new Array<>());
+        this(game, scores, characters, null, new Array<>());
     }
 
     /** @param awards end-of-match awards to show under the podium (may be empty) */
-    public VictoryScreen(TumbalataGame game, int[] scores, int[] characters, Array<Awards.Award> awards) {
+    /** @param names each player's name (index 0 = Player 1), or null for "P1"..."P4" */
+    public VictoryScreen(TumbalataGame game, int[] scores, int[] characters, String[] names, Array<Awards.Award> awards) {
         this.game = game;
         this.awards = awards;
         this.playerCount = MathUtils.clamp(scores.length, 1, 4);
@@ -99,13 +111,19 @@ public class VictoryScreen implements Screen {
 
         order = orderByScore(this.scores);
         places = places(this.scores, order);
-        winnerText = winnerText(order, places);
+        this.names = new String[this.playerCount];
+        for (int i = 0; i < this.playerCount; i++) {
+            this.names[i] = (names != null && i < names.length && names[i] != null) ? names[i] : GameSettings.defaultName(i);
+        }
+        winnerText = names == null ? winnerText(order, places) : winnerText(order, places, this.names);
 
-        // Each player is drawn in their own character's color
+        // Each player is drawn as their own character, in its colours
         colors = new Color[this.playerCount];
+        picks = new int[this.playerCount];
         for (int p = 0; p < this.playerCount; p++) {
             int pick = (characters != null && p < characters.length) ? characters[p] : p;
-            colors[p] = Characters.CARD_COLORS[MathUtils.clamp(pick, 0, Characters.COUNT - 1)];
+            picks[p] = MathUtils.clamp(pick, 0, Characters.COUNT - 1);
+            colors[p] = Characters.CARD_COLORS[picks[p]];
         }
     }
 
@@ -137,6 +155,18 @@ public class VictoryScreen implements Screen {
         return places;
     }
 
+    /** "MAYA WINS!" or "MAYA & JOJO WIN!" */
+    static String winnerText(int[] order, int[] places, String[] names) {
+        StringBuilder text = new StringBuilder();
+        int winners = 0;
+        for (int slot = 0; slot < order.length && places[slot] == 0; slot++) {
+            if (winners > 0) text.append(" & ");
+            text.append(names[order[slot]]);
+            winners++;
+        }
+        return text + (winners == 1 ? " WINS!" : " WIN!");
+    }
+
     static String winnerText(int[] order, int[] places) {
         StringBuilder names = new StringBuilder();
         int winners = 0;
@@ -159,11 +189,17 @@ public class VictoryScreen implements Screen {
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
-        font = new BitmapFont();
+        font = Fonts.create();
 
-        background = loadTexture(BACKGROUND_FILE);
-        if (background == null) background = loadTexture(FALLBACK_BACKGROUND_FILE);
+        backdrop = game.getBackdrop();
+        if (backdrop == null) background = loadTexture(BACKGROUND_FILE);
         titleTexture = loadTexture(TITLE_FILE);
+        if (Gdx.files.internal("16x16 Walk-Sheet.png").exists() && Gdx.files.internal("16x16 Walkwithslipper.png").exists()) {
+            walkSheet = loadTexture("16x16 Walk-Sheet.png");
+            Texture[] split = SpriteSheets.splitPureWhite("16x16 Walkwithslipper.png");
+            slipperBody = split[0];
+            slipperOverlay = split[1];
+        }
     }
 
     /** Loads a texture, or returns null (silently - these are optional) if the file isn't there. */
@@ -214,8 +250,10 @@ public class VictoryScreen implements Screen {
         batch.setProjectionMatrix(camera.combined);
         shapeRenderer.setProjectionMatrix(camera.combined);
 
-        // 1. Background image (if any)
-        if (background != null) {
+        // 1. Background: the live map like the main menu, else the image
+        if (backdrop != null) {
+            backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
+        } else if (background != null) {
             batch.begin();
             batch.draw(background, 0, 0, MENU_WIDTH, MENU_HEIGHT);
             batch.end();
@@ -226,7 +264,7 @@ public class VictoryScreen implements Screen {
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
-        if (background == null) { // simple placeholder floor
+        if (backdrop == null && background == null) { // simple placeholder floor
             shapeRenderer.setColor(0.16f, 0.18f, 0.28f, 1f);
             shapeRenderer.rect(0, 0, MENU_WIDTH, BASE_Y);
         }
@@ -253,17 +291,18 @@ public class VictoryScreen implements Screen {
                 shapeRenderer.setColor(0f, 0f, 0f, 0.30f);
                 shapeRenderer.ellipse(cx - 18f * s, BASE_Y + BLOCK_H[rank] - 4f * s, 36f * s, 8f * s);
 
-                // placeholder character: body + head in the player's color
-                Color pc = colors[order[slot]];
-                shapeRenderer.setColor(pc);
-                shapeRenderer.rect(cx - 14f * s, footY, 28f * s, 38f * s);
-                shapeRenderer.circle(cx, footY + 50f * s, 12f * s);
-                shapeRenderer.setColor(0f, 0f, 0f, 0.25f);
-                shapeRenderer.rect(cx - 14f * s, footY, 28f * s, 6f * s);   // darker "feet"
+                if (walkSheet == null) { // placeholder character: body + head in the player's color
+                    Color pc = colors[order[slot]];
+                    shapeRenderer.setColor(pc);
+                    shapeRenderer.rect(cx - 14f * s, footY, 28f * s, 38f * s);
+                    shapeRenderer.circle(cx, footY + 50f * s, 12f * s);
+                    shapeRenderer.setColor(0f, 0f, 0f, 0.25f);
+                    shapeRenderer.rect(cx - 14f * s, footY, 28f * s, 6f * s);   // darker "feet"
+                }
 
                 if (rank == 0) { // little crown for the winner
                     shapeRenderer.setColor(1f, 0.85f, 0.2f, 1f);
-                    float crownY = footY + 62f * s;
+                    float crownY = footY + figureHeight(rank, s) + 2f; // just above the head (or the slipper)
                     shapeRenderer.rect(cx - 11f * s, crownY, 22f * s, 6f * s);
                     shapeRenderer.triangle(cx - 11f * s, crownY + 6f * s, cx - 6f * s, crownY + 6f * s, cx - 11f * s, crownY + 15f * s);
                     shapeRenderer.triangle(cx - 4f * s, crownY + 6f * s, cx + 4f * s, crownY + 6f * s, cx, crownY + 16f * s);
@@ -282,6 +321,7 @@ public class VictoryScreen implements Screen {
 
         // 3. Text
         batch.begin();
+        drawFigures();
 
         float titleBob = MathUtils.sin(time * TITLE_BOB_SPEED) * TITLE_BOB_AMOUNT;
         if (titleTexture != null) {
@@ -306,15 +346,15 @@ public class VictoryScreen implements Screen {
             // name and score above the character
             if (popProgress(slot) >= 1f) {
                 float s = FIGURE_SCALE[rank];
-                float aboveY = BASE_Y + BLOCK_H[rank] + 80f * s + (rank == 0 ? 22f : 8f);
+                float aboveY = BASE_Y + BLOCK_H[rank] + figureHeight(rank, s) + (rank == 0 ? 42f : 10f); // clear of the crown
                 int player = order[slot];
-                drawCentered("P" + (player + 1), cx, aboveY + 18f, rank == 0 ? 1.8f : 1.2f, Color.WHITE);
+                drawCentered(names[player], cx, aboveY + (rank == 0 ? 26f : 18f), rank == 0 ? 1.8f : 1.2f, Color.WHITE);
                 drawCentered(scores[player] + " pts", cx, aboveY, rank == 0 ? 1.3f : 1f, Color.LIGHT_GRAY);
             }
         }
 
         if (time >= revealEndTime()) {
-            drawCentered(winnerText, MENU_WIDTH / 2f, 395f, 1.8f, Color.WHITE);
+            drawCentered(winnerText, MENU_WIDTH / 2f, 418f, 1.8f, Color.WHITE);
             if (((int) (time * 2f)) % 2 == 0) { // blinking hint
                 drawCentered("PRESS ENTER TO CONTINUE", MENU_WIDTH / 2f, HINT_Y, 1.1f, Color.LIGHT_GRAY);
             }
@@ -337,13 +377,47 @@ public class VictoryScreen implements Screen {
         float alpha = awardAlpha(t);
         Awards.Award a = awards.get(index);
 
-        String line = a.title + "  " + a.winnerNames() + "  (" + a.detail + ")";
+        String line = a.title + "  " + a.winnerNames(names) + "  (" + a.detail + ")";
         font.getData().setScale(1.25f);
         layout.setText(font, line);
         font.setColor(1f, 0.85f, 0.3f, alpha);
         font.draw(batch, line, (MENU_WIDTH - layout.width) / 2f, AWARD_Y);
         font.getData().setScale(1f);
         font.setColor(Color.WHITE);
+    }
+
+    /** Height of a podium figure from its feet (sprite or drawn placeholder), at figure scale s. */
+    private float figureHeight(int rank, float s) {
+        if (walkSheet == null) return 62f * s;
+        int top = rank == 0 ? TOP_ROW_SLIPPER : TOP_ROW_DEFAULT;
+        return (SpriteSheets.FRAME - top) * SPRITE_SCALE * s;
+    }
+
+    /**
+     * The players as their characters on the podium: front-facing standing frame, tinted like in the match. 1st place
+     * holds the slipper, its white pixels in the player's colour. Inside batch.begin()/end().
+     */
+    private void drawFigures() {
+        if (walkSheet == null) return;
+        for (int slot = 0; slot < playerCount; slot++) {
+            float pop = popProgress(slot);
+            if (pop <= 0f) continue;
+            int rank = places[slot];
+            float s = FIGURE_SCALE[rank] * pop;
+            float size = SpriteSheets.FRAME * SPRITE_SCALE * s;
+            float cx = SLOT_CENTER_X[slot];
+            float footY = BASE_Y + BLOCK_H[rank] + ((rank == 0) ? MathUtils.sin(time * 4f) * 3f + 3f : 0f);
+            int pick = picks[order[slot]];
+            batch.setColor(Characters.TINTS[pick]);
+            batch.draw(rank == 0 ? slipperBody : walkSheet, cx - size / 2f, footY, size, size,
+                0, 0, SpriteSheets.FRAME, SpriteSheets.FRAME, false, false);
+            if (rank == 0) {
+                batch.setColor(Characters.COLORS[pick]);
+                batch.draw(slipperOverlay, cx - size / 2f, footY, size, size,
+                    0, 0, SpriteSheets.FRAME, SpriteSheets.FRAME, false, false);
+            }
+        }
+        batch.setColor(Color.WHITE);
     }
 
     private void drawCentered(String text, float cx, float y, float scale, Color color) {
@@ -389,6 +463,9 @@ public class VictoryScreen implements Screen {
         if (shapeRenderer != null) { shapeRenderer.dispose(); shapeRenderer = null; }
         if (font != null) { font.dispose(); font = null; }
         if (background != null) { background.dispose(); background = null; }
+        backdrop = null; // owned by TumbalataGame and shared with the menu screens
         if (titleTexture != null) { titleTexture.dispose(); titleTexture = null; }
+        for (Texture t : new Texture[] { walkSheet, slipperBody, slipperOverlay }) if (t != null) t.dispose();
+        walkSheet = slipperBody = slipperOverlay = null;
     }
 }

@@ -88,7 +88,7 @@ public class MainMenuScreen implements Screen {
 
     batch = new SpriteBatch();
     shapeRenderer = new ShapeRenderer();
-    font = new BitmapFont();
+    font = Fonts.create();
 
     background = loadTexture(BACKGROUND_FILE);
     backdrop = game.getBackdrop();

@@ -42,6 +42,7 @@ public class MenuBackdrop {
     private static final float SPEED_MAX = 95f;
     private static final float IDLE_MIN = 0.4f;      // seconds a character stands still after reaching a spot
     private static final float IDLE_MAX = 1.8f;
+    private static final float STUCK_SECONDS = 1.2f; // no progress towards the target for this long = give up on it
 
     // Area the characters wander in (map coordinates). Spots inside walls are skipped automatically.
     private static final float WALK_MIN_X = 260f;
@@ -193,6 +194,9 @@ public class MenuBackdrop {
         final Color tint;
         final float speed;
         float idleTimer;
+        // Giving up on targets it can't reach (e.g. behind a wall): no real progress for STUCK_SECONDS = pick another
+        float bestDistance;
+        float stuckTimer;
 
         Walker(Color tint) {
             this.tint = new Color(tint);
@@ -220,9 +224,11 @@ public class MenuBackdrop {
                 float y = MathUtils.random(WALK_MIN_Y, WALK_MAX_Y);
                 if (!isBlocked(x, y)) {
                     target.set(x, y);
-                    return;
+                    break;
                 }
             }
+            bestDistance = pos.dst(target);
+            stuckTimer = 0f;
         }
 
         void update(float delta) {
@@ -241,6 +247,21 @@ public class MenuBackdrop {
                 vel.set(0f, 0f);
                 anim.update(delta, vel);
                 return;
+            }
+
+            // Sliding along a wall towards a target behind it gets nowhere: after a while, rest and choose another spot
+            float distance = (float) Math.sqrt(dx * dx + dy * dy);
+            if (distance < bestDistance - 4f) {
+                bestDistance = distance;
+                stuckTimer = 0f;
+            } else {
+                stuckTimer += delta;
+                if (stuckTimer > STUCK_SECONDS) {
+                    idleTimer = MathUtils.random(IDLE_MIN, IDLE_MAX);
+                    vel.set(0f, 0f);
+                    anim.update(delta, vel);
+                    return;
+                }
             }
 
             vel.set(dx, dy).nor().scl(speed);

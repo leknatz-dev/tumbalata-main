@@ -77,6 +77,7 @@ public final class InputManager {
 
     private final MenuInput menu = new MenuInput();
     private boolean menuLocked = false;
+    private boolean textEntry = false; // typing a name: keyboard keys are text, not player controls
     private final ControllerAdapter listener;
 
     public InputManager() {
@@ -185,6 +186,18 @@ public final class InputManager {
         if (menuLocked) menu.clearNavigation();
     }
 
+    /**
+     * While true the keyboard is for typing (names): the per-player keyboard schemes and the M mute key are off, so
+     * typing "SAM" doesn't move Player 1. Controllers keep working.
+     */
+    public void setTextEntry(boolean on) {
+        textEntry = on;
+    }
+
+    public boolean isTextEntry() {
+        return textEntry;
+    }
+
     /** While true the menus ignore input (used during the screen transition, so a button mash can't hit the new screen). */
     public void setMenuLocked(boolean locked) {
         menuLocked = locked;
@@ -257,7 +270,7 @@ public final class InputManager {
         boolean up = pad.up, down = pad.down, left = pad.left, right = pad.right;
         boolean a = pad.a, b = pad.b, select = pad.select, start = pad.start;
 
-        if (ks != null) {
+        if (ks != null && !textEntry) {
             up |= anyKey(ks.up);
             down |= anyKey(ks.down);
             left |= anyKey(ks.left);

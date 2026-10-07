@@ -21,4 +21,12 @@ public final class GameSettings {
         prefs.putBoolean(STREET_EVENTS, on);
         prefs.flush();
     }
+
+    /** Longest player name, in characters. */
+    public static final int MAX_NAME_LENGTH = 10;
+
+    /** The default name for a player slot: "P1" ... "P4". */
+    public static String defaultName(int slot) {
+        return "P" + (slot + 1);
+    }
 }

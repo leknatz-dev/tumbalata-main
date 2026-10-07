@@ -32,6 +32,16 @@ public class GenPlaceholderSounds {
         write(sfx.resolve("slip.wav"), concat(slide(0.35), tone(220, 0.12, 0.4, Wave.SQUARE)));
         write(sfx.resolve("dog_bark.wav"), concat(concat(woof(0.13), new double[(int) (0.08 * RATE)]), woof(0.16)));
         write(sfx.resolve("poop_squish.wav"), squish(0.3));
+        // Pop-up signs
+        write(sfx.resolve("sign_run.wav"), concat(concat(tone(660, 0.07, 0.45, Wave.SQUARE), tone(880, 0.07, 0.45, Wave.SQUARE)), tone(1100, 0.12, 0.45, Wave.SQUARE)));
+        write(sfx.resolve("sign_haha.wav"), concat(concat(tone(520, 0.11, 0.45, Wave.SQUARE), new double[(int) (0.05 * RATE)]), tone(440, 0.16, 0.45, Wave.SQUARE)));
+        write(sfx.resolve("sign_my_turn.wav"), concat(tone(392, 0.14, 0.5, Wave.SINE), tone(523, 0.26, 0.5, Wave.SINE)));
+        write(sfx.resolve("sign_gotcha.wav"), concat(slide(0.25), thump(0.1)));
+        write(sfx.resolve("sign_throw_turn.wav"), tone(1568, 0.16, 0.45, Wave.SINE));
+        write(sfx.resolve("sign_taya_picked.wav"), concat(concat(concat(thump(0.07), thump(0.07)), thump(0.07)), chord(new double[] { 392, 494, 587 }, 0.45)));
+        write(sfx.resolve("sign_choose_spot.wav"), chord(new double[] { 1047, 1319 }, 0.35));
+        write(sfx.resolve("sign_tagged.wav"), concat(tone(330, 0.1, 0.5, Wave.SQUARE), tone(220, 0.18, 0.5, Wave.SQUARE)));
+        write(sfx.resolve("sign_streak.wav"), arpeggio(new double[] { 523, 659, 784, 1047 }, 0.06, 0.16));
 
         // Music loops (8 bars of simple arpeggios)
         write(music.resolve("menu.wav"), loop(new double[][] { { 262, 330, 392 }, { 220, 262, 330 }, { 175, 220, 262 }, { 196, 247, 294 } }, 100, 0.79)); // about as loud as a real song

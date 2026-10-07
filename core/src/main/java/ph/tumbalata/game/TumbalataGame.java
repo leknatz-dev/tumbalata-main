@@ -9,6 +9,18 @@ import com.badlogic.gdx.Screen;
  * Screens should switch with changeScreen(...) and call toggleFullscreen() on F11.
  */
 public class TumbalataGame extends Game {
+    // Platform step run before the controllers are read (the desktop launcher loads extra pad mappings here)
+    private final Runnable controllerSetup;
+
+    public TumbalataGame() {
+        this(null);
+    }
+
+    /** @param controllerSetup run once at startup, before any controller is read (may be null) */
+    public TumbalataGame(Runnable controllerSetup) {
+        this.controllerSetup = controllerSetup;
+    }
+
     private static final int DEFAULT_WINDOW_W = 700;
     private static final int DEFAULT_WINDOW_H = 500;
 
@@ -41,7 +53,9 @@ public class TumbalataGame extends Game {
     private static boolean isMenuScreen(Screen screen) {
         return screen instanceof MainMenuScreen
             || screen instanceof PlayerSelectScreen
-            || screen instanceof CharacterSelectScreen;
+            || screen instanceof NameEntryScreen
+            || screen instanceof CharacterSelectScreen
+            || screen instanceof VictoryScreen;
     }
 
     // Sweep animation played over every screen change
@@ -71,6 +85,7 @@ public class TumbalataGame extends Game {
     @Override
     public void create() {
         transition = new ScreenTransition();
+        if (controllerSetup != null) controllerSetup.run();
         input = new InputManager();
         audio = new Audio();
         settings = new GameSettings();
@@ -116,7 +131,7 @@ public class TumbalataGame extends Game {
     public void render() {
         input.setMenuLocked(transition.isActive());
         input.update();  // once per frame, before the screen reads it
-        if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.M)) audio.toggleMute(); // M = mute anywhere
+        if (!input.isTextEntry() && Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.M)) audio.toggleMute(); // M = mute (not while typing a name)
         audio.update(Gdx.graphics.getDeltaTime()); // music fades
         super.render(); // draws the current screen (and lets it read input, which may request a screen change)
 

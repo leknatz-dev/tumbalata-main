@@ -9,7 +9,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
 
 public class Player {
-    /** Name-tag colour per player slot (P1 red, P2 blue, P3 green, P4 yellow). */
+    /** Colour per player number (P1 red, P2 blue, P3 green, P4 yellow), for screens before characters are picked. */
     public static final Color[] SLOT_COLORS = {
         new Color(0.95f, 0.30f, 0.30f, 1f),
         new Color(0.35f, 0.55f, 1.00f, 1f),
@@ -22,6 +22,8 @@ public class Player {
     /** The character this player picked (index into {@link Characters}). */
     public final int characterIndex;
     public int score = 0;
+    /** The name shown everywhere for this player (name tags, HUD, signs). Defaults to "P1"..."P4". */
+    public String name;
 
     public Vector2 position;
     /** Position at the start of this frame, used to slide back out of walls. */
@@ -65,6 +67,7 @@ public class Player {
     private PlayerAnimation walkAnim;
     private PlayerAnimation walkWithSlipperAnim;
     private PlayerAnimation walkWithCanAnim;
+    private PlayerAnimation slipperOverlayAnim;
     public boolean facingRight = true;
     public void updateFacingFromAngle(float angle) {
     // Standard normalized angle check: if pointing left-ish, flip sprite left
@@ -77,6 +80,7 @@ public class Player {
                   Texture normalSheet, Texture slipperSheet, Texture canSheet) {
         this.id = id;
         this.characterIndex = characterIndex;
+        this.name = GameSettings.defaultName(id);
         this.tint.set(Characters.TINTS[characterIndex]);
         this.position = new Vector2(x, y);
         this.velocity = new Vector2(0, 0);
@@ -99,18 +103,41 @@ public class Player {
         }
     }
 
+    // Keeps this player behind the court line (a Thrower who hasn't thrown yet). The line may lean, so the limit is
+    // checked at the player's own height every frame. null = free.
+    private CourtLine keepBehind;
+    private float keepBehindMargin;
+
+    public void keepBehind(CourtLine line, float margin) {
+        keepBehind = line;
+        keepBehindMargin = margin;
+    }
+
+    public boolean isKeptBehindLine() {
+        return keepBehind != null;
+    }
+
+    private void clampBehindLine() {
+        if (keepBehind != null) position.x = Math.min(position.x, keepBehind.xAt(position.y) - keepBehindMargin);
+    }
+
     public void setXBounds(float minX, float maxX) {
         this.minX = minX;
         this.maxX = maxX;
     }
 
-    /** Short label for the HUD and name tags: "P1" ... "P4". */
+    /** The player's name for the HUD, name tags and signs. */
     public String label() {
-        return "P" + (id + 1);
+        return name;
     }
 
-    public Color slotColor() {
-        return SLOT_COLORS[id % SLOT_COLORS.length];
+    /**
+     * This player's colour in a match: their character's colour, so the slipper, aim arrow, name tag and HUD match
+     * the character on screen (each character can only be picked once, so colours never clash). Before characters are
+     * picked (name entry, character select), screens use {@link #SLOT_COLORS} by player number instead.
+     */
+    public Color color() {
+        return Characters.COLORS[characterIndex];
     }
 
     public void handleInput(float delta) {
@@ -125,6 +152,7 @@ public class Player {
 
         position.x = Math.max(minX, Math.min(maxX, position.x));
         position.y = Math.max(minY, Math.min(maxY, position.y));
+        clampBehindLine();
     }
 
     /** Slips: slides along (dirX, dirY) (normalized here), then is stunned. */
@@ -167,6 +195,7 @@ public class Player {
             position.add(slideVelocity.x * t * delta, slideVelocity.y * t * delta);
             position.x = Math.max(minX, Math.min(maxX, position.x));
             position.y = Math.max(minY, Math.min(maxY, position.y));
+            clampBehindLine();
             slideTime -= delta;
         } else if (stunTime > 0f) {
             stunTime -= delta;
@@ -195,9 +224,18 @@ public class Player {
             walkWithCanAnim.update(delta, velocity);
         } else if (hasSlipper && walkWithSlipperAnim != null) {
             walkWithSlipperAnim.update(delta, velocity);
+            if (slipperOverlayAnim != null) slipperOverlayAnim.update(delta, velocity); // same frames, kept in step
         } else if (walkAnim != null) {
             walkAnim.update(delta, velocity);
         }
+    }
+
+    /**
+     * The held slipper drawn on its own, white, from the slipper walk sheet (same layout). It is tinted in the player's
+     * colour on top of the body, which keeps the character tint. null = the sheet's slipper is part of the body.
+     */
+    public void setSlipperOverlay(Texture overlaySheet) {
+        slipperOverlayAnim = overlaySheet == null ? null : new PlayerAnimation(overlaySheet, 0.12f);
     }
 
     public void render(SpriteBatch batch) {
@@ -221,6 +259,10 @@ public class Player {
             width, 
             height
         );
+        if (hasSlipper && !hasCan && slipperOverlayAnim != null) {
+            batch.setColor(color());
+            batch.draw(slipperOverlayAnim.getCurrentFrame(), position.x - width / 2f, position.y - height / 2f, width, height);
+        }
         batch.setPackedColor(previousColor);
     }
 

@@ -54,6 +54,14 @@ public class Roster {
         if (throwers.size > 1) throwers.add(throwers.removeIndex(0));
     }
 
+    /** A fresh start with {@code tayaId} as Taya (e.g. picked by the mano); everyone else throws in player order. */
+    public void startWithTaya(int tayaId) {
+        if (tayaId < 0 || tayaId >= playerCount) throw new IllegalArgumentException("no player " + tayaId);
+        taya = tayaId;
+        throwers.clear();
+        for (int id = 0; id < playerCount; id++) if (id != tayaId) throwers.add(id);
+    }
+
     /** {@code throwerId} becomes Taya; the old Taya takes their spot in the turn order. */
     public void swapWithTaya(int throwerId) {
         int index = throwers.indexOf(throwerId);

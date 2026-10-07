@@ -52,7 +52,17 @@ public final class Audio {
         TRASH_LAND("trash_land", 0.7f),       // trash lands on the court
         SLIP("slip", 0.8f),                   // a player slips on trash
         DOG_BARK("dog_bark", 0.8f),           // a stray dog trots onto the court
-        POOP_SQUISH("poop_squish", 0.9f);     // a player steps in the dog's poop
+        POOP_SQUISH("poop_squish", 0.9f),     // a player steps in the dog's poop
+        // Pop-up signs (each sign plays its own; GAME START! uses GAME_START and GOOD JOB! uses GAME_END)
+        SIGN_RUN("sign_run", 0.8f),
+        SIGN_HAHA("sign_haha", 0.8f),
+        SIGN_MY_TURN("sign_my_turn", 0.8f),
+        SIGN_GOTCHA("sign_gotcha", 0.8f),
+        SIGN_THROW_TURN("sign_throw_turn", 0.7f),
+        SIGN_TAYA_PICKED("sign_taya_picked", 0.9f),
+        SIGN_CHOOSE_SPOT("sign_choose_spot", 0.8f),
+        SIGN_TAGGED("sign_tagged", 0.8f),
+        SIGN_STREAK("sign_streak", 0.8f);
 
         final String file;
         final float volume;

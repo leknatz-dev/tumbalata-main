@@ -68,6 +68,8 @@ public class Match {
     private static final float SLIPPER_SPEED_PER_POWER = 18f;
 
     private static final float TOSS_IMPACT_DELAY = 0.6f; // seconds between Taya's can hitting a slipper and the swap
+    /** After a missed toss, Taya can't pick the can up for this long: the Throwers' head start for their slippers. */
+    public static final float CAN_LOCK_AFTER_MISS = 3f;
 
     // --- SPAWNS (relative to the throw line / can base). Waiting Throwers stand behind the first one. ---
     private static final float THROWER_SPAWN_BEHIND_LINE = 50f;
@@ -106,7 +108,10 @@ public class Match {
          * The can was hit, or Taya's toss missed: Throwers grab their own slipper and run home, Taya stands the can
          * back up and then may tag anyone past the line. Throwers who haven't thrown yet still may.
          */
-        SCRAMBLE
+        SCRAMBLE,
+        /** Before the first round: Taya carries the can around the can zone and stands it on a spot (B). The clock
+         * is stopped and only Taya moves. That spot is the can's base for the rest of the match. */
+        PLACE_CAN
     }
 
     public enum Aim { NONE, ANGLE, POWER }
@@ -132,6 +137,10 @@ public class Match {
         default void dogArrived(StrayDog dog) {}
         default void dogPooped(StrayDog dog) {}
         default void steppedInPoop(Player player) {}
+        /** It is now this Thrower's turn to throw (at the start of a round and after each throw). */
+        default void throwerTurn(Player thrower) {}
+        /** Taya stood the can on its spot for this match (the first round starts now). */
+        default void canSpotChosen(Vector2 spot) {}
     }
 
     private static final Events NO_EVENTS = new Events() {};
@@ -163,6 +172,12 @@ public class Match {
     private boolean over = false;
 
     private final MatchStats stats;
+
+    // The line between Throwers and Taya, and the Throwers' spawn area (from the map; straight at THROW_LINE_X in tests)
+    private CourtLine court = CourtLine.straight(THROW_LINE_X);
+    private Player announcedTurn; // last Thrower reported through Events.throwerTurn
+    private float canLockTimer = 0f; // seconds left before Taya may pick the can up after a missed toss
+    private int knocksThisRound = 0; // can knocks since the round started (2+ = a streak)
 
     // Optional rules, off unless the game turns them on (so tests stay neutral)
     private boolean characterTraits = false;
@@ -198,6 +213,22 @@ public class Match {
 
     public void setEvents(Events events) {
         this.events = events == null ? NO_EVENTS : events;
+    }
+
+    /** Moves the can's base (where it stands, and where Taya puts it back), and starts the round over. */
+    public void setCanBase(float x, float y) {
+        canBase.set(x, y);
+        resetRound(false);
+    }
+
+    /** Uses the map's court line and throw area, and starts the round over so everyone spawns in the right place. */
+    public void setCourt(CourtLine court) {
+        this.court = court;
+        resetRound(false);
+    }
+
+    public CourtLine court() {
+        return court;
     }
 
     /** Each character's trait (speed, throw, aim, reach; see {@link Characters}) applies. Off by default. */
@@ -244,6 +275,10 @@ public class Match {
     public float power() { return currentPower; }
     public float timeLeft() { return Math.max(0f, timeLeft); }
     public boolean isOver() { return over; }
+    /** Seconds left of the head start after a missed toss (0 = Taya may pick the can up). */
+    public float canLockTimeLeft() { return canLockTimer; }
+    /** How many times the can was knocked down this round (the first knock is 1; 2+ is a streak). */
+    public int knocksThisRound() { return knocksThisRound; }
     public MatchStats stats() { return stats; }
     /** Trash on (or flying onto) the court. */
     public Array<Trash> trash() { return trash; }
@@ -281,7 +316,7 @@ public class Match {
 
     /** Taya may pick the can up when it has been knocked over (or tossed), or to toss it when everyone missed. */
     public boolean canTayaPickUpCan() {
-        if (taya.hasCan || taya.isStunned()) return false;
+        if (taya.hasCan || taya.isStunned() || canLockTimer > 0f) return false;
         return (mode == RoundMode.SCRAMBLE && can.isHit) || mode == RoundMode.TAYA_TOSS;
     }
 
@@ -313,13 +348,25 @@ public class Match {
         return true;
     }
 
+    /** True when no Thrower holds a slipper and every slipper lies still on Taya's side of the line. */
+    public boolean allSlippersDownPastLine() {
+        boolean anyThrower = false;
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (p == taya) continue;
+            anyThrower = true;
+            if (p.hasSlipper || p.slipper.velocity.len() > 0 || !court.isPast(p.slipper.position)) return false;
+        }
+        return anyThrower;
+    }
+
     /** The round is over when every Thrower is back behind the line holding their own slipper. */
     private boolean everyoneHome() {
         if (aim != Aim.NONE) return false;
         for (int pi = 0; pi < players.size; pi++) {
             Player p = players.get(pi);
             if (p == taya) continue;
-            if (!p.hasSlipper || p.position.x >= THROW_LINE_X) return false;
+            if (!p.hasSlipper || court.isPast(p.position)) return false;
         }
         return true;
     }
@@ -331,7 +378,12 @@ public class Match {
     /** Advances the match by one frame: timer, input, movement, physics and rules. */
     public void update(float delta) {
         if (over) return;
+        if (mode == RoundMode.PLACE_CAN) { // choosing the can spot: no clock, only Taya moves
+            updateCanPlacement(delta);
+            return;
+        }
         timeLeft -= delta;
+        canLockTimer = Math.max(0f, canLockTimer - delta);
         if (timeLeft <= 0f) {
             over = true;
             return;
@@ -343,6 +395,15 @@ public class Match {
         }
         handleInput(delta);
         step(delta);
+        announceTurn();
+    }
+
+    /** Tells the screen when the Thrower whose turn it is changes. */
+    private void announceTurn() {
+        Player up = (mode == RoundMode.THROWING || mode == RoundMode.SCRAMBLE) ? nextThrower() : null;
+        if (up == announcedTurn) return;
+        announcedTurn = up;
+        if (up != null) events.throwerTurn(up);
     }
 
     private void handleInput(float delta) {
@@ -382,6 +443,8 @@ public class Match {
             if ((mode == RoundMode.THROWING || mode == RoundMode.SCRAMBLE) && up != null && up.hasSlipper
                 && !up.isStunned() && up.input.aPressed) {
                 startAim(up);
+            } else if (mode == RoundMode.SCRAMBLE && rethrower() != null) {
+                startAim(rethrower());
             } else if (mode == RoundMode.TAYA_TOSS && taya.hasCan && !taya.isStunned() && taya.input.aPressed) {
                 startAim(taya);
             }
@@ -400,6 +463,69 @@ public class Match {
                     launchSlipper(who);
                 }
             }
+        }
+    }
+
+    /**
+     * During the scramble, a Thrower who is home (behind the line with their slipper, after throwing) may throw again,
+     * e.g. to knock the can down so a teammate still out there can run home. The first one to press A this frame.
+     */
+    private Player rethrower() {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (canRethrow(p) && p.input.aPressed) return p;
+        }
+        return null;
+    }
+
+    /** True for a Thrower who is home during the scramble and may throw their slipper again. */
+    public boolean canRethrow(Player p) {
+        return mode == RoundMode.SCRAMBLE && p != taya && p.hasThrown && p.hasSlipper && !p.isStunned()
+            && !court.isPast(p.position);
+    }
+
+    /** Makes this player the first Taya (picked by the mano before the match) and starts the round over. */
+    public void chooseFirstTaya(int playerId) {
+        roster.startWithTaya(playerId);
+        resetRound(false);
+    }
+
+    /**
+     * Taya carries the can and chooses where it stands for this match (inside the map's can zone). Does nothing if
+     * the map has no can zone. The match goes on to the first round when the can is placed.
+     */
+    public void beginCanPlacement() {
+        if (!court.hasCanZone()) return;
+        mode = RoundMode.PLACE_CAN;
+        aim = Aim.NONE;
+        aimer = null;
+        taya.hasCan = true;
+        Vector2 centre = court.canZoneCentre();
+        taya.position.set(centre.x, centre.y - FEET_OFFSET_Y); // feet in the middle of the zone
+        can.position.set(taya.position.x, taya.position.y + 15);
+    }
+
+    /** While choosing the can spot: true when Taya stands where the can may go (inside the can zone). */
+    public boolean canPlaceCanHere() {
+        return mode == RoundMode.PLACE_CAN && court.inCanZone(taya.position.x, taya.position.y + FEET_OFFSET_Y);
+    }
+
+    private void updateCanPlacement(float delta) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            p.prevPosition.set(p.position);
+            if (p == taya) p.handleInput(delta);
+            else p.stop();
+            p.update(delta);
+        }
+        playerWalls.slide(taya.position, taya.prevPosition.x, taya.prevPosition.y,
+            PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
+        can.position.set(taya.position.x, taya.position.y + 15);
+
+        if (taya.input.bPressed && canPlaceCanHere()) {
+            canBase.set(taya.position.x, taya.position.y + FEET_OFFSET_Y); // the can stands at Taya's feet
+            resetRound(false);
+            events.canSpotChosen(canBase);
         }
     }
 
@@ -495,6 +621,7 @@ public class Match {
                     }
                     if (can.velocity.len() == 0) {
                         mode = RoundMode.SCRAMBLE; // missed: grab your slippers and run!
+                        canLockTimer = CAN_LOCK_AFTER_MISS; // head start: Taya can't pick the can up yet
                         events.tossMissed(taya);
                     }
                 }
@@ -504,6 +631,12 @@ public class Match {
                 if (everyoneHome()) {
                     endRoundNormally();
                     return;
+                }
+                // Every slipper is lying in Taya's area and the can is up: Taya gets to toss the can at them
+                if (aim == Aim.NONE && !taya.hasCan && isCanStandingOnBase() && allSlippersDownPastLine()) {
+                    mode = RoundMode.TAYA_TOSS;
+                    events.tayaTossTurn(taya);
+                    break;
                 }
                 checkTagging();
                 break;
@@ -613,6 +746,7 @@ public class Match {
     }
 
     private boolean isFreeTrashSpot(float x, float y) {
+        if (court.inThrowArea(x, y)) return false; // never where the Throwers spawn
         if (playerWalls.isBlocked(x, y - FEET_OFFSET_Y, PLAYER_HITBOX_W + 10f, PLAYER_HITBOX_H + 10f)) return false;
         if (Vector2.dst(x, y, canBase.x, canBase.y + FEET_OFFSET_Y) < TRASH_CLEAR_OF_BASE) return false;
         for (int i = 0; i < trash.size; i++) {
@@ -671,14 +805,14 @@ public class Match {
     public boolean isAnyThrowerPastLine() {
         for (int pi = 0; pi < players.size; pi++) {
             Player p = players.get(pi);
-            if (p != taya && p.position.x > THROW_LINE_X) return true;
+            if (p != taya && court.isPast(p.position)) return true;
         }
         return false;
     }
 
     /** A Thrower can be tagged while holding their slipper past the line. Only crossing back over the line is safe. */
     public boolean isTaggable(Player p) {
-        return p != taya && p.hasSlipper && p.position.x > THROW_LINE_X;
+        return p != taya && p.hasSlipper && court.isPast(p.position);
     }
 
     /** Once the can stands on its base again, Taya can tag a taggable Thrower. */
@@ -720,6 +854,7 @@ public class Match {
     private void launchSlipper(Player p) {
         // Once their slipper is thrown, a Thrower may cross the line (until the round resets)
         p.setXBounds(PLAY_MIN_X, PLAY_MAX_X);
+        p.keepBehind(null, 0f);
         p.hasThrown = true;
         p.hasSlipper = false;
 
@@ -748,6 +883,7 @@ public class Match {
         can.toss(targetVx, targetVy, equivalentPower);
         slipper.velocity.scl(0.5f);
 
+        knocksThisRound++;
         award(thrower, Scoring.KNOCK_CAN);
         stats.knocks[thrower.id]++;
         events.canKnocked(thrower);
@@ -805,26 +941,24 @@ public class Match {
         aimer = null;
 
         if (nextTurn) roster.nextTurn();
+        announcedTurn = null; // the new round's first Thrower gets announced
         applyRoles();
         for (int pi = 0; pi < players.size; pi++) players.get(pi).clearSlip();
 
         // Throwers in turn order: the first one at the line, the rest on the waiting spots behind it
         for (int i = 0; i < roster.throwers().size; i++) {
             Player p = players.get(roster.throwers().get(i));
-            p.setXBounds(PLAY_MIN_X, THROW_LINE_X - EDGE_MARGIN);
+            p.setXBounds(PLAY_MIN_X, PLAY_MAX_X);
+            p.keepBehind(court, EDGE_MARGIN);
             p.hasSlipper = true;
             p.hasThrown = false;
             p.hasCan = false;
-            if (i == 0) {
-                p.position.set(THROW_LINE_X - THROWER_SPAWN_BEHIND_LINE, WORLD_HEIGHT * 0.5f);
-            } else {
-                float[] spot = WAITING_THROWER_OFFSETS[(i - 1) % WAITING_THROWER_OFFSETS.length];
-                p.position.set(THROW_LINE_X - THROWER_SPAWN_BEHIND_LINE + spot[0], WORLD_HEIGHT * 0.5f + spot[1]);
-            }
+            throwerSpawn(i, p.position);
             p.slipper.reset(p.position.x, p.position.y);
         }
 
         taya.setXBounds(PLAY_MIN_X, PLAY_MAX_X);
+        taya.keepBehind(null, 0f);
         taya.position.set(canBase.x + TAYA_SPAWN_RIGHT_OF_BASE, canBase.y);
         taya.hasCan = false;
         taya.hasSlipper = false;
@@ -838,6 +972,34 @@ public class Match {
         isImpactPending = false;
         impactDelayTimer = 0f;
         impactVictim = null;
+        canLockTimer = 0f;
+        knocksThisRound = 0;
+    }
+
+    /**
+     * Where the i-th Thrower in turn order starts: the first one just behind the line, the rest on waiting spots
+     * further back. With a throw area from the map, every spot is pulled inside that area and out of the walls.
+     */
+    private void throwerSpawn(int i, Vector2 out) {
+        float y = court.hasThrowArea() ? court.throwAreaCentre().y : WORLD_HEIGHT * 0.5f;
+        out.set(court.xAt(y) - THROWER_SPAWN_BEHIND_LINE, y);
+        if (i > 0) {
+            float[] spot = WAITING_THROWER_OFFSETS[(i - 1) % WAITING_THROWER_OFFSETS.length];
+            out.add(spot[0], spot[1]);
+        }
+        if (!court.hasThrowArea()) return;
+
+        Vector2 centre = court.throwAreaCentre();
+        for (int step = 0; step < 8 && !isGoodSpawn(out); step++) {
+            out.lerp(centre, 0.35f); // pull towards the middle of the throw area until it fits
+        }
+        if (!isGoodSpawn(out)) out.set(centre);
+    }
+
+    private boolean isGoodSpawn(Vector2 p) {
+        return court.inThrowArea(p.x, p.y + FEET_OFFSET_Y)
+            && !playerWalls.isBlocked(p.x, p.y, PLAYER_HITBOX_W, PLAYER_HITBOX_H)
+            && !court.isPast(p.x + EDGE_MARGIN, p.y);
     }
 
     /** Points the taya shortcut at the roster's Taya; every player gets their role's speed times their trait. */

@@ -36,6 +36,11 @@ Throwers try to knock down a can with their slippers (the pambato); one Taya gua
 4. **Everyone missed:** once all slippers have stopped, Taya picks up the can and must stay on that spot: Taya cannot move from picking up the can until it is tossed, so the toss always leaves from where the can stood. A can that lands within 30 px of a slipper makes that slipper's owner the new Taya. The can only hops a little when it lands (bounce 0.2).
 5. **Toss missed:** the scramble starts: Throwers may now pick up their slippers and run home while Taya fetches the can and puts it back on its base.
 6. **Tag:** during the scramble, once the can stands upright on its base (within 10 px), Taya can tag a Thrower who is past the throw line **and holding their slipper** (within 30 px). A Thrower without their slipper cannot be tagged; once picked up, a slipper cannot be put down, so the only way to be safe again is to cross back behind the line. The tagged Thrower becomes Taya.
+6b. **Re-throw:** during the scramble, a Thrower who is home (behind the line, holding their slipper, after throwing) may throw again with A, e.g. to knock the can down so a teammate still out there can run home (Taya must stand it back up before tagging). A knock scores as usual; the re-thrower then has to fetch the slipper again.
+6c. **Toss when every slipper is down:** during the scramble, if no Thrower holds a slipper, every slipper lies still on Taya's side of the line and the can stands on its base, it becomes Taya's toss turn (MY TURN!), exactly like after a full miss.
+6d. **Head start after a missed toss:** when Taya's toss misses, Taya can't pick the can up for 3 s (`Match.CAN_LOCK_AFTER_MISS`; a 3-2-1 countdown shows over the can), so the Throwers get a free window to grab their slippers. This stops a Taya from tossing short on purpose to retry. It applies only after a toss, not after a knock.
+**Mano ("maiba taya") before the match** (`Mano`, drawn by `GameScreen`): before GAME START the hands of all players sit in a ring over the blurred court and bob while a 3-second countdown runs. Each player picks **A = palm up** or **B = palm down** (no press = palm down). Then the hands flip: the one hand that differs from all the others (3/1 with 4 players, 2/1 with 3) is **Taya**, shown with "NAME IS TAYA!". 2/2 or all the same = AGAIN. With 2 players, different hands make the palm-up player Taya; same hands go again. After 5 agains a Taya is picked at random. Art: `assets/mano/back.png` (done: the round backing, 32 x 32 drawn 13x) and `hand_fist.png`, `hand_up.png`, `hand_down.png` (done: 36 x 36, white with transparent backgrounds, fingers pointing up, drawn 3x, turned to point into the ring and tinted per player), and `select.png` (done: the red starburst, 50 x 50 drawn 2.5x, spinning behind the Taya's hand). Under the ring the hint shows the button art: yellow = palm up (A), red = palm down (B).
+**Choosing the can spot** (after the mano, if the map has a `can zone` layer): "CHOOSE CAN SPOT!" and the zone shows as a box on the ground (green when Taya stands inside it). Taya carries the can, walks anywhere in the zone and presses B to stand it there; only Taya moves and the clock is stopped. That spot is the can's base for the whole match (tosses and "put the can back" use it). Then GAME START. Without a `can zone` layer this step is skipped (`can base` layer or the centre circle).
 7. After a swap, the old Taya becomes a Thrower and throws first in the new round.
 8. The round ends when every Thrower is back behind the line holding their own slipper; the next round starts with the same Taya.
 
@@ -91,7 +96,8 @@ Every change goes through `TumbalataGame.changeScreen()`: the old screen's last 
 | --- | --- | --- | --- |
 | Main menu | `MainMenuScreen` | 700 x 500 | Live map background, title, Start and Exit with the slipper pointer |
 | Player count | `PlayerSelectScreen` | 700 x 500 | 3P and 4P buttons; passes the count on |
-| Character select | `CharacterSelectScreen` | 700 x 500 | Four cards; Player 1's pick is passed on |
+| Player names | `NameEntryScreen` | 700 x 500 | One row per player. Keyboard: type, Enter = OK, Up/Down = row, Esc = back (the keyboard only types here). Pads: Up/Down = letter, Left/Right = move, A = OK, B = delete, Select = back. Names start blank every game (not kept); empty = "P1"... and used everywhere (tags, HUD, signs, victory, awards) |
+| Character select | `CharacterSelectScreen` | 700 x 500 | Four cards; name tags above the card each player is on |
 | Game | `GameScreen` | 1280 x 698 window, 1408 x 768 view | Match with a timer |
 | Victory | `VictoryScreen` | 700 x 500 | Podium: 2nd, 1st (middle, largest), 3rd, 4th; blocks rise, characters pop in |
 
@@ -110,6 +116,7 @@ All input goes through one `InputManager`, created once by `TumbalataGame` and u
 | Start | none | none | Start (button 6) | Confirm in menus, pause in a match |
 
 **Pause / settings menu** (`PauseMenu`): Select or Start on any player's pad, R (Select for P1 / P2 on the keyboard), Esc or P pauses the match, blurs the court and shows a square panel: RESUME, RESTART ROUND (what Select used to do), SOUND on/off, STREET EVENTS on/off, EXIT TO MENU. B / Esc / Select resumes. Placeholder look, all buttons work.
+**Button prompts:** instead of text, the button art (`assets/redbutton.png`, `yellowbutton.png`, 18 x 18 drawn 1.5x, pulsing; drawn circles if missing) floats over the player who can press it now: **red = B** (pick up a slipper, pick up or put back the can, place the can on its spot) and **yellow = A** (start aiming, lock the aim, throw, re-throw, toss). The "NAME THROW!" sign waits for 0.5 s with no other sign and no hit-stop, so it is never lost behind RUN!, TAGGED! or a freeze.
 
 Space and E also work on the second keyboard scheme, so one person can still test both roles alone. Actions are tied to the player whose turn it is: Thrower phases read the Thrower's input, Taya phases read Taya's.
 
@@ -127,6 +134,7 @@ Any controller or the keyboard can drive any menu. D-pad or WASD or arrows move 
 **Pad mapping**
 
 Button numbers come from the pad's own mapping when the controller library recognises it; the owner's PS1 pads report A = 0, B = 1, Select = 4, Start = 6 (confirmed Oct 2026: the old fixed Select = 8 / Start = 9 never fired on them). Unrecognised pads fall back to A = 0, B = 1, Select = 8, Start = 9, D-pad on axes 0 and 1 with a 0.5 dead zone. The console prints the numbers in use for each pad when it connects. To change the numbers without recompiling, create `assets/controller.properties` with `a`, `b`, `select`, `start`, `axisX`, `axisY`, `invertY` and `deadZone`. Set `DEBUG_PRINT_BUTTONS` to true in `InputManager` to print each button number to the console.
+**Pads the game doesn't see:** the controller library only accepts pads in its built-in list. Others are added through `assets/gamecontrollerdb.txt` (SDL mapping lines, loaded by the desktop launcher at startup). It already has the owner's DragonRise "USB Joystick" (`0079:0006`) with the same PlayStation-style layout as the PS1 pads. To find another pad's GUID, run `java -cp lwjgl3/build/libs/TUMBALATAEXPO-1.0.0.jar tools/PadProbe.java`. A pad Windows doesn't list at all (not in the probe, not in `joy.cpl`) is a hardware or USB problem. Player slots follow the order Windows lists the pads.
 
 **Debug keys (game screen)**
 
@@ -175,6 +183,9 @@ Note: `GameConstants.CAN_FRICTION` (1.8) is not used; the can's friction lives i
 
 ## Map, rendering and coordinates
 
+**Court line and throw area (from Tiled):** the `courtline` object layer is the line between Throwers and Taya. It may lean with the perspective; the game uses its centre line (`CourtLine`), so "past the line" and "keep Throwers who haven't thrown behind the line" follow the drawing at every height. The `throw area` object layer is where Throwers spawn (pulled inside it and out of the walls). F1 shows both (green line, light blue area). Without these layers the old straight line at x 320 is used.
+**Can base (from Tiled):** add an object layer named `can base` with one object (a point, small rectangle or ellipse); its centre is where the can stands each round and where Taya puts it back. Without the layer the can stands in the centre circle (704, 177).
+
 The court art is bigger than the Tiled grid, and the whole game is built around that. The TMX is 40 x 22 tiles of 32 px (1280 x 704), but the court art (an Image Layer) and `upperring.png` are 1408 x 768. The art starts at the TMX's top-left, so it hangs 64 px below the grid and 128 px to its right.
 
 **Coordinates**
@@ -209,6 +220,7 @@ The court art is bigger than the Tiled grid, and the whole game is built around 
 `MenuBackdrop` loads the same TMX for the menus: camera centred at (704, 320) with zoom 1.5, four characters (the walk sheet tinted per character) wandering inside x 260 to 1130, y 20 to 420, avoiding collision1, with shadows and the ring on top. One instance is shared by the main menu, player count and character select screens and released when the game starts.
 
 ## Assets
+**Font:** all text uses Pixelta (`assets/fonts/pixelta.ttf`) through `Fonts.create()`; screens size it with `setScale` as before (scale 1 = 16 px). It is rendered 3x and shrunk smoothly, so in-between sizes stay readable.
 
 All assets live in the `assets/` folder and are loaded by file name, which is case-sensitive on Linux and macOS. Screens that use optional images draw a placeholder when the file is missing, so nothing crashes while art is still being made.
 
@@ -235,27 +247,39 @@ All assets live in the `assets/` folder and are loaded by file name, which is ca
 
 | File | Size | Screen |
 | --- | --- | --- |
-| `char1.png` to `char4.png` | 110 x 150 | Character select cards |
+| `character.png` (or `char1.png` to `char4.png`) | any (the current one is 746 x 634) | **Done.** Character select: drawn **white** in each 110 x 110 character box, tinted in that character's colour and fitted to the box; the name and stat bars sit under the box. One `character.png` is used for every card without its own `charN.png` |
 | `select_character_title.png` | any | Character select heading |
 | `select_players_title.png` | any | Player count heading |
-| `victory_background.png` | 700 x 500 | Victory screen (falls back to `menu_background.png`) |
+| Victory background | | **Done.** The same live map as the main menu (falls back to `menu_background.png`) |
+| Victory podium figures | from the walk sheets | **Done.** Each player as their character: the front-facing standing frame, tinted like in the match; 1st place holds the slipper (in the player's colour) |
 | `victory_title.png` | any | Victory heading |
+| `slipper.png` | 16 x 16 (drawn 2x) | **Done.** Thrown slipper, white: tinted in the owner's player colour, spins while flying |
+| `16x16 Walkwithslipper.png` slipper | in the sheet | **Done.** The held slipper is pure white (#FFFFFF) in the sheet; the game splits those pixels off and tints them in the player colour (the body keeps the character tint). Keep #FFFFFF only for the slipper |
+| `arrow_default.png`, `arrow_sniper.png` | 36 x 36 (drawn 2x) | **Done.** Aim arrows, white, pointing up-right at 45 degrees; turned around the tail (`ARROW_*_TAIL` in `GameScreen`). SNIPER characters get the long one |
+| `warning_sign.png` | 32 x 32 | **Done.** Bobs over each spot where trash is about to land |
+| `trash/banana.png`, `box.png`, `apple.png` | 16 x 16 (drawn 2x) | **Done.** Street-event trash |
+| `street/dog.png` | 512 x 432 | **Done.** 8 x 9 frames of 64 x 48, facing left; row 5 = walking, row 2 = sitting (while pooping) |
 | `controller.properties` (optional) | text | Overrides for pad button numbers |
 
 Per-character sprite sheets do not exist yet: the four characters are currently one walk sheet with a colour tint (see Characters in the architecture section).
 
 ## Pop-up signs
 
-Big signs pop up in the middle of the match screen (class `Signs`): they pop in, hold, then fade out, one at a time. Until an image exists, the sign's text is drawn as big outlined placeholder text. To use real art, add a PNG with the name below to `assets/signs/`; it is drawn centred at its own size (`Signs.IMAGE_SCALE` to scale it). Display times are in the `Signs.Sign` list.
+Big signs pop up in the middle of the match screen (class `Signs`), one at a time: they spring in from nothing with an overshoot and a tilt wobble, float gently, then grow and fade out. Art goes in `assets/signs/` with the names below and is drawn **5x** (`Signs.IMAGE_SCALE`; the 81 x 37 signs become 405 x 185). Signs without art show big outlined placeholder text. Display times are in the `Signs.Sign` list. Done so far: game_start, run, haha, my_turn, gotcha, tagged, streak.
 
 | File (`assets/signs/`) | Placeholder text | When it shows |
 | --- | --- | --- |
 | `game_start.png` | GAME START! | After the screen transition into the match. The match (and its timer) waits until the sign is gone. |
 | `run.png` | RUN! | The can is knocked down while a Thrower is past the line, or Taya's toss misses |
-| `haha.png` | HAHA! | The can is knocked down and every Thrower is safe behind the line |
+| `haha.png` | HAHA! | The first knock of a round while every Thrower is safe behind the line |
 | `my_turn.png` | MY TURN! | Everyone missed: Taya's turn to toss the can |
 | `gotcha.png` | GOTCHA! | Taya's tossed can lands on a slipper |
 | `good_job.png` | GOOD JOB! | Time is up (with the whistle); the victory screen follows when the sign is gone |
+| `taya_picked.png` | NAME IS TAYA! | After the mano, in the new Taya's colour (the name is drawn under the art) |
+| `choose_spot.png` | CHOOSE CAN SPOT! | After the mano, while Taya picks the can spot (no blur) |
+| `tagged.png` | TAGGED! | Taya tags a Thrower |
+| `streak.png` | STREAK x2! | The can is knocked again in the same round while everyone is safe (RUN! still wins if someone is past the line); the first knock shows HAHA! |
+| `throw_turn.png` | NAME THROW! | Each time a new Thrower's turn starts (round start and after each throw), in that player's colour. Waits for any other sign to finish; no blur. With art, the player's name is drawn under the image |
 
 ## Match feel, street events, traits and awards
 
@@ -274,7 +298,7 @@ Big signs pop up in the middle of the match screen (class `Signs`): they pop in,
 - 15–25 s into the match, then 20–35 s after its poop is stepped in, a stray dog barks and trots in from the left or right edge, stops at a random free spot, poops (1.2 s), and runs off the other side.
 - Only one poop on the court at a time, and it never fades: it stays until someone walks into it. No new dog comes while it is there.
 - Stepping in it: stunned on the spot for 1.5 s (no slide), same rules as trash (a stunned Thrower can still be tagged, a stunned Taya can't tag). Standing still on it does nothing.
-- Placeholder shapes until `assets/street/dog.png` (one frame, facing right; flipped when walking left) and `assets/street/poop.png` exist.
+- Art: `assets/street/dog.png` (animated sheet, see Assets) and `assets/street/poop.png` (16 x 16, drawn 2x). The can stands in the centre circle (704, 177).
 
 **Character traits** (placeholder balance in `Characters`; multipliers on top of the role's base speed, so Taya keeps its own speed)
 
@@ -282,7 +306,7 @@ Big signs pop up in the middle of the match screen (class `Signs`): they pop in,
 | --- | --- | --- |
 | CHAR 1 | FAST | Speed ×1.12, throw ×0.9 |
 | CHAR 2 | STRONG | Throw ×1.15 (slippers fly faster, Taya tosses further) |
-| CHAR 3 | ACCURATE | Aim meter ×0.75 speed (easier to time) |
+| CHAR 3 | SNIPER | Aim meter ×0.75 speed (easier to time) and the long aim arrow |
 | CHAR 4 | SNEAKY | Slipper pick-up reach ×1.4 |
 
 The character select cards show the trait and SPD / PWR / AIM / REACH bars (half full = normal). The trait belongs to the character, so it stays with the player in both roles; the in-game HUD lists each player's trait next to their score.
@@ -316,6 +340,7 @@ Every file below is a synthesized **placeholder** (made by `tools/GenPlaceholder
 | `sfx/slip` | A player slips on trash |
 | `sfx/dog_bark` | The stray dog trots onto the court |
 | `sfx/poop_squish` | A player steps in the dog's poop |
+| `sfx/sign_run`, `sign_haha`, `sign_my_turn`, `sign_gotcha`, `sign_throw_turn`, `sign_taya_picked`, `sign_choose_spot`, `sign_tagged`, `sign_streak` | Each pop-up sign plays its own sound when it appears (GAME START! uses `game_start`, GOOD JOB! uses `game_end`) |
 | `music/menu` | Looping on the main menu, player count and character select; also quietly under the game music during a match (background layer at 20%, under the game music in front). Music defaults to 15% volume; each track has its own volume in `Audio.Track` for balancing real songs |
 | `music/game` | Looping during the match (fades out at time up) |
 | `music/victory` | Looping on the victory screen |

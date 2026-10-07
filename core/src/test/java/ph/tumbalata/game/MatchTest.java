@@ -343,9 +343,7 @@ class MatchTest {
     @Test
     void tayaPicksUpTheCanOnlyWhenItWasKnockedOver() {
         newMatch(2);
-        throwRight(p(0), 90f);
-        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
-        stepFor(3f);
+        knockCanAndPickUpSlipper(); // a Thrower holds a slipper, so this is not a toss turn (see tayaGetsToToss...)
         tayaPicksUpCan();
         tayaPutsCanBack();
 
@@ -678,6 +676,147 @@ class MatchTest {
         step(DT);
         assertEquals(1, match.stats().tags[1]);
         assertEquals(1, match.stats().caught[0]);
+    }
+
+    @Test
+    void aThrowerWhoIsHomeMayThrowAgainToKnockTheCanForATeammate() {
+        newMatch(3);
+        Player out = match.nextThrower();
+        throwRight(out, 15f);                         // misses: this one will still be out, slipper on the ground
+        Player first = match.nextThrower();
+        knockCanAndPickUpSlipperFor(first);           // the other knocks the can and grabs the slipper...
+        first.position.set(Match.THROW_LINE_X - 60f, Match.WORLD_HEIGHT * 0.5f); // ...and is home again
+        step(DT);
+        assertEquals(Match.RoundMode.SCRAMBLE, match.mode(), "the round goes on: one Thrower is still out");
+        assertFalse(match.canRethrow(out), "no slipper in hand");
+        assertTrue(match.canRethrow(first));
+
+        tayaPicksUpCan();
+        tayaPutsCanBack();
+        assertTrue(match.isCanStandingOnBase());
+
+        first.position.y = Match.CAN_BASE_Y;          // in line with the can
+        throwRight(first, 90f);
+        stepUntil(() -> match.can().isHit, DT, 3f);
+        assertEquals(2, match.stats().knocks[first.id], "knocked the can a second time");
+        assertFalse(first.hasSlipper, "and has to fetch the slipper again");
+    }
+
+    @Test
+    void tayaGetsToTossWhenEverySlipperLiesInTayasArea() {
+        newMatch(2);
+        throwRight(p(0), 90f);                                   // knocks the can; the slipper ends up past the line
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
+        stepFor(3f);
+        assertTrue(match.allSlippersDownPastLine());
+        assertEquals(Match.RoundMode.SCRAMBLE, match.mode(), "can is down: no toss yet");
+
+        StringBuilder log = new StringBuilder();
+        match.setEvents(new Match.Events() {
+            @Override public void tayaTossTurn(Player taya) { log.append("toss "); }
+        });
+        tayaPicksUpCan();
+        tayaPutsCanBack();
+        step(DT);
+        assertEquals(Match.RoundMode.TAYA_TOSS, match.mode(), "every slipper is in Taya's area and the can is up");
+        assertEquals("toss ", log.toString());
+        assertTrue(match.canTayaPickUpCan(), "Taya picks the can up to toss it, as after a full miss");
+    }
+
+    @Test
+    void afterAMissedTossTayaWaitsBeforePickingUpTheCan() {
+        newMatch(2);
+        throwRight(p(0), 50f);
+        stepUntil(() -> match.mode() == Match.RoundMode.TAYA_TOSS, DT, 10f);
+        tayaPicksUpCan();
+        tossAt(new Vector2(match.taya().position).add(0f, 150f)); // misses on purpose
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 5f);
+        assertTrue(match.canLockTimeLeft() > Match.CAN_LOCK_AFTER_MISS - 0.1f, "the head start starts at the miss");
+
+        Player taya = match.taya();
+        taya.position.set(match.can().position);
+        pressB(taya);
+        assertFalse(taya.hasCan, "can't grab the can straight away to toss again");
+
+        stepFor(Match.CAN_LOCK_AFTER_MISS);
+        assertEquals(0f, match.canLockTimeLeft(), 0.001f);
+        taya.position.set(match.can().position);
+        pressB(taya);
+        assertTrue(taya.hasCan, "after the head start Taya can fetch the can as usual");
+    }
+
+    @Test
+    void aKnockedCanIsNotLocked() {
+        newMatch(2);
+        throwRight(p(0), 90f);
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
+        assertEquals(0f, match.canLockTimeLeft(), 0.001f, "the head start is only after a toss");
+    }
+
+    @Test
+    void noTossWhileAThrowerHoldsTheirSlipper() {
+        newMatch(2);
+        knockCanAndPickUpSlipper();                              // P1 holds the slipper again
+        tayaPicksUpCan();
+        tayaPutsCanBack();
+        step(DT);
+        assertFalse(match.allSlippersDownPastLine());
+        assertEquals(Match.RoundMode.SCRAMBLE, match.mode());
+    }
+
+    @Test
+    void knocksAreCountedPerRoundForStreaks() {
+        newMatch(3);
+        Player out = match.nextThrower();
+        throwRight(out, 15f);
+        Player first = match.nextThrower();
+        knockCanAndPickUpSlipperFor(first);
+        assertEquals(1, match.knocksThisRound());
+        first.position.set(Match.THROW_LINE_X - 60f, Match.CAN_BASE_Y);
+        tayaPicksUpCan();
+        tayaPutsCanBack();
+        throwRight(first, 90f);                            // re-throw: knocks it again
+        stepUntil(() -> match.can().isHit, DT, 3f);
+        assertEquals(2, match.knocksThisRound(), "second knock in the same round: a streak");
+        match.restartRound();
+        assertEquals(0, match.knocksThisRound(), "a new round starts the count over");
+    }
+
+    @Test
+    void aThrowerPastTheLineCannotRethrow() {
+        newMatch(2);
+        knockCanAndPickUpSlipper();
+        p(0).position.set(Match.THROW_LINE_X + 100f, 200f);
+        assertFalse(match.canRethrow(p(0)));
+    }
+
+    /** Like knockCanAndPickUpSlipper, for whoever throws first. */
+    private void knockCanAndPickUpSlipperFor(Player thrower) {
+        thrower.position.y = Match.CAN_BASE_Y;
+        throwRight(thrower, 90f);
+        stepUntil(() -> match.mode() == Match.RoundMode.SCRAMBLE, DT, 3f);
+        stepFor(3f);
+        thrower.position.set(thrower.slipper.position);
+        pressB(thrower);
+        assertTrue(thrower.hasSlipper);
+    }
+
+    @Test
+    void eachThrowersTurnIsAnnouncedInOrder() {
+        newMatch(4);
+        StringBuilder log = new StringBuilder();
+        match.setEvents(new Match.Events() {
+            @Override public void throwerTurn(Player thrower) { log.append(thrower.label()).append(' '); }
+        });
+        StringBuilder expected = new StringBuilder();
+        step(DT);
+        for (int i = 0; i < 3; i++) {
+            Player up = match.nextThrower();
+            expected.append(up.label()).append(' ');
+            throwRight(up, 15f); // weak: nobody hits the can, the round goes on
+            step(DT);
+        }
+        assertEquals(expected.toString(), log.toString(), "start of the round, then after every throw, once each");
     }
 
     @Test

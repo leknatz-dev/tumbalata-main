@@ -23,6 +23,16 @@ public final class Awards {
             this.winners = winners;
         }
 
+        /** "MAYA & JOJO", using each player's name (index = player id). */
+        public String winnerNames(String[] names) {
+            StringBuilder s = new StringBuilder();
+            for (int i = 0; i < winners.length; i++) {
+                if (i > 0) s.append(" & ");
+                s.append(names[winners[i]]);
+            }
+            return s.toString();
+        }
+
         /** "P1 & P3". */
         public String winnerNames() {
             StringBuilder s = new StringBuilder();

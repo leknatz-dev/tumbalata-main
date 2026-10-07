@@ -99,7 +99,7 @@ public class PlayerSelectScreen implements Screen {
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
-        font = new BitmapFont();
+        font = Fonts.create();
 
         background = loadTexture(BACKGROUND_FILE);
         backdrop = game.getBackdrop();
@@ -274,7 +274,7 @@ public class PlayerSelectScreen implements Screen {
         leaving = true;
         game.audio().play(Audio.Sfx.UI_CONFIRM);
         if (game != null) {
-            game.changeScreen(new CharacterSelectScreen(game, playerCount), MENU_WINDOW_W, MENU_WINDOW_H);
+            game.changeScreen(new NameEntryScreen(game, playerCount), MENU_WINDOW_W, MENU_WINDOW_H);
         }
     }
 

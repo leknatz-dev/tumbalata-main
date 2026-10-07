@@ -102,7 +102,7 @@ public final class PauseMenu {
         Gdx.gl.glDisable(GL20.GL_BLEND);
 
         batch.begin();
-        float scale = font.getData().scaleX;
+        float scale = Fonts.scaleOf(font); // restored after drawing
         font.getData().setScale(2.2f);
         font.setColor(1f, 1f, 1f, alpha);
         drawCentered(batch, font, "PAUSED", panel.x + panel.width / 2f, panel.y + panel.height - 26f);

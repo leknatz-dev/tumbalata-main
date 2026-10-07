@@ -15,7 +15,7 @@ public final class Trash {
 
     /** Placeholder kinds, drawn as different coloured shapes until there is art. */
     public static final int KINDS = 3;
-    public static final String[] KIND_FILES = { "banana_peel", "plastic_bag", "sardine_can" };
+    public static final String[] KIND_FILES = { "banana", "box", "apple" };
 
     public enum State { WARNING, FLYING, LANDED }
 
