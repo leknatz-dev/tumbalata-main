@@ -55,6 +55,7 @@ public class MainMenuScreen implements Screen {
     private Viewport viewport;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
+    private ControlHints hints;
     private BitmapFont font;
     private final GlyphLayout layout = new GlyphLayout();
 
@@ -89,6 +90,7 @@ public class MainMenuScreen implements Screen {
     batch = new SpriteBatch();
     shapeRenderer = new ShapeRenderer();
     font = Fonts.create();
+    hints = new ControlHints();
 
     background = loadTexture(BACKGROUND_FILE);
     backdrop = game.getBackdrop();
@@ -176,6 +178,7 @@ public class MainMenuScreen implements Screen {
         }
 
         batch.end();
+        hints.draw(batch, shapeRenderer, font, MENU_WIDTH / 2f, 50f, 1f, ControlHints.Icon.A, "SELECT");
 
         if (slipperTexture == null) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);

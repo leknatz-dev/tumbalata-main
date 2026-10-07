@@ -39,6 +39,7 @@ Throwers try to knock down a can with their slippers (the pambato); one Taya gua
 6b. **Re-throw:** during the scramble, a Thrower who is home (behind the line, holding their slipper, after throwing) may throw again with A, e.g. to knock the can down so a teammate still out there can run home (Taya must stand it back up before tagging). A knock scores as usual; the re-thrower then has to fetch the slipper again.
 6c. **Toss when every slipper is down:** during the scramble, if no Thrower holds a slipper, every slipper lies still on Taya's side of the line and the can stands on its base, it becomes Taya's toss turn (MY TURN!), exactly like after a full miss.
 6d. **Head start after a missed toss:** when Taya's toss misses, Taya can't pick the can up for 3 s (`Match.CAN_LOCK_AFTER_MISS`; a 3-2-1 countdown shows over the can), so the Throwers get a free window to grab their slippers. This stops a Taya from tossing short on purpose to retry. It applies only after a toss, not after a knock.
+**Intro dialogue** (see its own section): the kids call each other out to play, then the mano. Skippable by holding B.
 **Mano ("maiba taya") before the match** (`Mano`, drawn by `GameScreen`): before GAME START the hands of all players sit in a ring over the blurred court and bob while a 3-second countdown runs. Each player picks **A = palm up** or **B = palm down** (no press = palm down). Then the hands flip: the one hand that differs from all the others (3/1 with 4 players, 2/1 with 3) is **Taya**, shown with "NAME IS TAYA!". 2/2 or all the same = AGAIN. With 2 players, different hands make the palm-up player Taya; same hands go again. After 5 agains a Taya is picked at random. Art: `assets/mano/back.png` (done: the round backing, 32 x 32 drawn 13x) and `hand_fist.png`, `hand_up.png`, `hand_down.png` (done: 36 x 36, white with transparent backgrounds, fingers pointing up, drawn 3x, turned to point into the ring and tinted per player), and `select.png` (done: the red starburst, 50 x 50 drawn 2.5x, spinning behind the Taya's hand). Under the ring the hint shows the button art: yellow = palm up (A), red = palm down (B).
 **Choosing the can spot** (after the mano, if the map has a `can zone` layer): "CHOOSE CAN SPOT!" and the zone shows as a box on the ground (green when Taya stands inside it). Taya carries the can, walks anywhere in the zone and presses B to stand it there; only Taya moves and the clock is stopped. That spot is the can's base for the whole match (tosses and "put the can back" use it). Then GAME START. Without a `can zone` layer this step is skipped (`can base` layer or the centre circle).
 7. After a swap, the old Taya becomes a Thrower and throws first in the new round.
@@ -117,6 +118,7 @@ All input goes through one `InputManager`, created once by `TumbalataGame` and u
 
 **Pause / settings menu** (`PauseMenu`): Select or Start on any player's pad, R (Select for P1 / P2 on the keyboard), Esc or P pauses the match, blurs the court and shows a square panel: RESUME, RESTART ROUND (what Select used to do), SOUND on/off, STREET EVENTS on/off, EXIT TO MENU. B / Esc / Select resumes. Placeholder look, all buttons work.
 **Button prompts:** instead of text, the button art (`assets/redbutton.png`, `yellowbutton.png`, 18 x 18 drawn 1.5x, pulsing; drawn circles if missing) floats over the player who can press it now: **red = B** (pick up a slipper, pick up or put back the can, place the can on its spot) and **yellow = A** (start aiming, lock the aim, throw, re-throw, toss). The "NAME THROW!" sign waits for 0.5 s with no other sign and no hit-stop, so it is never lost behind RUN!, TAGGED! or a freeze.
+**Menu hints** (`ControlHints`): each menu shows its controls with the button art and a drawn D-pad. Main menu: yellow = SELECT. Player count: yellow = PICK. Names: D-pad up/down = letter, right = next space, yellow = READY, red = UNREADY (plus a keyboard line). Character select: D-pad left/right = CHOOSE, yellow = LOCK IN, red = CHANGE.
 
 Space and E also work on the second keyboard scheme, so one person can still test both roles alone. Actions are tied to the player whose turn it is: Thrower phases read the Thrower's input, Taya phases read Taya's.
 
@@ -259,9 +261,32 @@ All assets live in the `assets/` folder and are loaded by file name, which is ca
 | `warning_sign.png` | 32 x 32 | **Done.** Bobs over each spot where trash is about to land |
 | `trash/banana.png`, `box.png`, `apple.png` | 16 x 16 (drawn 2x) | **Done.** Street-event trash |
 | `street/dog.png` | 512 x 432 | **Done.** 8 x 9 frames of 64 x 48, facing left; row 5 = walking, row 2 = sitting (while pooping) |
+| `portraits/fast.png`, `strong.png`, `sniper.png`, `sneaky.png` | about 150 x 200 | **Done.** Intro dialogue portraits, white or light-grey shirt (tinted per player). See Intro dialogue |
+| `dialogue/box.png` (optional) | any, 8 px corners | Intro dialogue box (nine-patch); a drawn box is used without it |
 | `controller.properties` (optional) | text | Overrides for pad button numbers |
 
 Per-character sprite sheets do not exist yet: the four characters are currently one walk sheet with a colour tint (see Characters in the architecture section).
+
+## Intro dialogue
+
+Before the mano, every match opens with a short Pokémon-style chat between the kids calling each other out to play (`DialogueScript` reads the script, `DialogueBox` draws it, stage `DIALOGUE` in `GameScreen`). The court is blurred behind it. Each line types out letter by letter with a voice blip (`sfx/dialogue_blip`, pitched per character). When one kid talks, the box covers only their half of the screen: P1/P3 on the left, P2/P4 on the right. When the speaker changes sides, the box slides over and the new portrait rises up from behind it before the text starts typing. The name plate is in the player colour. An `ALL:` line widens the box to full width and shows "EVERYONE" with every portrait in a row.
+
+**Controls:** A finishes the line, then A again goes to the next one. Holding B for 0.8 s skips the whole dialogue (a bar fills along the bottom of the box). The button hints sit inside the box.
+
+**Script** (`assets/dialogue/intro.txt`, plain text, edit freely):
+
+```
+# a note (ignored)
+[3]                     a script for 3 players; several [3] sections = one is picked at random
+P1: Uy {P2}! Laro tayo!  speaker P1..P4 or ALL, then the text
+ALL: Maiba taya!
+```
+
+`{P1}`..`{P4}` become the players' names. Lines for a player who isn't in the game are dropped. If there is no script for the player count, the dialogue is skipped. Unreadable lines are skipped and logged, and `DialogueScriptTest` checks that the real file has scripts for 2, 3 and 4 players with no bad lines. The current scripts are Taglish, with 2 variants per player count, each ending "Maiba taya!".
+
+**Portraits** (`assets/portraits/fast.png`, `strong.png`, `sniper.png`, `sneaky.png`, about 150 x 200 with a transparent background, drawn 1.6x): by character, not by player. The shirt must be **white or light grey**. The game finds it by filling up from the bottom of the picture through light, colourless pixels (around the outside too), and tints it in the player colour, keeping the folds. White up on the face (teeth, eyes, headband) is not touched. Faces and other colours stay as drawn.
+
+**Box art** (optional, `assets/dialogue/box.png`): drawn as a nine-patch with 8 px corners. Without it the box is a white frame with a dark navy fill.
 
 ## Pop-up signs
 
@@ -304,10 +329,10 @@ Big signs pop up in the middle of the match screen (class `Signs`), one at a tim
 
 | Character | Trait | Effect |
 | --- | --- | --- |
-| CHAR 1 | FAST | Speed ×1.12, throw ×0.9 |
-| CHAR 2 | STRONG | Throw ×1.15 (slippers fly faster, Taya tosses further) |
-| CHAR 3 | SNIPER | Aim meter ×0.75 speed (easier to time) and the long aim arrow |
-| CHAR 4 | SNEAKY | Slipper pick-up reach ×1.4 |
+| CHAR 1 | FAST | Speed x1.12; aim meter x1.2 faster (harder to aim) |
+| CHAR 2 | STRONG | Throw x1.15 (slippers fly faster, Taya tosses further); speed x0.92; aim meter x1.15 faster |
+| CHAR 3 | SNIPER | Aim meter x0.75 speed (easier to time) and the long aim arrow; throw x0.9 |
+| CHAR 4 | SNEAKY | Slipper pick-up reach x1.4; speed x1.05 |
 
 The character select cards show the trait and SPD / PWR / AIM / REACH bars (half full = normal). The trait belongs to the character, so it stays with the player in both roles; the in-game HUD lists each player's trait next to their score.
 
@@ -340,6 +365,7 @@ Every file below is a synthesized **placeholder** (made by `tools/GenPlaceholder
 | `sfx/slip` | A player slips on trash |
 | `sfx/dog_bark` | The stray dog trots onto the court |
 | `sfx/poop_squish` | A player steps in the dog's poop |
+| `sfx/dialogue_blip` | Each pair of letters typed in the intro dialogue (pitched per character) |
 | `sfx/sign_run`, `sign_haha`, `sign_my_turn`, `sign_gotcha`, `sign_throw_turn`, `sign_taya_picked`, `sign_choose_spot`, `sign_tagged`, `sign_streak` | Each pop-up sign plays its own sound when it appears (GAME START! uses `game_start`, GOOD JOB! uses `game_end`) |
 | `music/menu` | Looping on the main menu, player count and character select; also quietly under the game music during a match (background layer at 20%, under the game music in front). Music defaults to 15% volume; each track has its own volume in `Audio.Track` for balancing real songs |
 | `music/game` | Looping during the match (fades out at time up) |

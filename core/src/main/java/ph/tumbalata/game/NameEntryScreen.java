@@ -46,7 +46,7 @@ public class NameEntryScreen implements Screen {
     private static final float ROW_H = 46f;
     private static final float ROW_GAP = 14f;
     private static final float ROWS_TOP = 370f;  // top edge of the first row
-    private static final float HINT_Y = 70f;
+    private static final float HINT_Y = 80f;
 
     private final TumbalataGame game;
     private final int playerCount;
@@ -62,6 +62,7 @@ public class NameEntryScreen implements Screen {
     private ShapeRenderer shapeRenderer;
     private BitmapFont font;
     private final GlyphLayout layout = new GlyphLayout();
+    private ControlHints hints;
     private MenuBackdrop backdrop;
     private float time = 0f;
     private boolean leaving = false;
@@ -163,6 +164,7 @@ public class NameEntryScreen implements Screen {
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
         font = Fonts.create();
+        hints = new ControlHints();
         backdrop = game.getBackdrop();
         game.input().setTextEntry(true);
         Gdx.input.setInputProcessor(typing);
@@ -233,9 +235,14 @@ public class NameEntryScreen implements Screen {
             layout.setText(font, status);
             font.draw(batch, status, r.x + r.width - layout.width - 10f, textY);
         }
-        drawCentered("KEYBOARD: TYPE, ENTER = OK, UP/DOWN = ROW     PAD: UP/DOWN = LETTER, A = OK, B = DELETE",
-            MENU_WIDTH / 2f, HINT_Y, 0.85f, Color.LIGHT_GRAY);
+        drawCentered("KEYBOARD: TYPE, ENTER = READY, UP/DOWN = ROW, BACKSPACE = DELETE", MENU_WIDTH / 2f, HINT_Y - 34f, 0.8f,
+            Color.LIGHT_GRAY);
         batch.end();
+
+        // Controller hints
+        hints.draw(batch, shapeRenderer, font, MENU_WIDTH / 2f, HINT_Y, 0.95f,
+            ControlHints.Icon.DPAD_UP_DOWN, "LETTER", ControlHints.Icon.DPAD_RIGHT, "NEXT SPACE",
+            ControlHints.Icon.A, "READY", ControlHints.Icon.B, "UNREADY");
     }
 
     private void drawCentered(String text, float cx, float y, float scale, Color color) {
@@ -322,6 +329,7 @@ public class NameEntryScreen implements Screen {
         if (batch != null) { batch.dispose(); batch = null; }
         if (shapeRenderer != null) { shapeRenderer.dispose(); shapeRenderer = null; }
         if (font != null) { font.dispose(); font = null; }
+        if (hints != null) { hints.dispose(); hints = null; }
         backdrop = null; // shared, owned by TumbalataGame
     }
 }

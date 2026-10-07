@@ -141,8 +141,11 @@ public class GameScreen implements Screen {
     private static final float ARROW_SNIPER_TAIL_X = 0f, ARROW_SNIPER_TAIL_Y = 0f;
 
     /** INTRO: waiting for the transition + "GAME START!" sign. OUTRO: "GOOD JOB!" before the victory screen. */
-    private enum Stage { MANO, MANO_RESULT, CAN_SPOT, INTRO, PLAYING, OUTRO, DONE }
-    private Stage stage = Stage.MANO;
+    private enum Stage { DIALOGUE, MANO, MANO_RESULT, CAN_SPOT, INTRO, PLAYING, OUTRO, DONE }
+    private Stage stage = Stage.DIALOGUE;
+    private DialogueBox dialogue;    // the kids calling each other to play (assets/dialogue/intro.txt), then the mano
+    private float dialogueFade = 0f; // 0..1, the dialogue box and the blur behind it
+    private ControlHints hints;
     private Mano mano;           // picks the first Taya before GAME START (MANO -> "NAME IS TAYA!" -> INTRO)
     private float manoFade = 0f; // 0..1, the mano widget and the blur behind it
     private boolean introSignShown = false;
@@ -240,6 +243,9 @@ public class GameScreen implements Screen {
         audio.playBackgroundMusic(Audio.Track.MENU); // the menu song, quietly underneath the game music
         signs = new Signs(audio);
         mano = new Mano(players.size, new java.util.Random());
+        hints = new ControlHints();
+        dialogue = loadIntroDialogue();
+        if (dialogue.isFinished()) stage = Stage.MANO; // no script for this many players: straight to the mano
         if (Gdx.files.internal("mano/back.png").exists()) manoBack = loadPixelTexture("mano/back.png");
         if (Gdx.files.internal("mano/select.png").exists()) manoSelect = loadPixelTexture("mano/select.png");
         if (Gdx.files.internal("mano/hand_fist.png").exists()) handFist = loadPixelTexture("mano/hand_fist.png");
@@ -397,6 +403,8 @@ public class GameScreen implements Screen {
         handlePause();
         pauseFade = paused ? Math.min(1f, pauseFade + delta / PAUSE_FADE_SECONDS)
             : Math.max(0f, pauseFade - delta / PAUSE_FADE_SECONDS);
+        dialogueFade = stage == Stage.DIALOGUE ? Math.min(1f, dialogueFade + delta / PAUSE_FADE_SECONDS)
+            : Math.max(0f, dialogueFade - delta / PAUSE_FADE_SECONDS);
         manoFade = stage == Stage.MANO ? Math.min(1f, manoFade + delta / PAUSE_FADE_SECONDS)
             : Math.max(0f, manoFade - delta / PAUSE_FADE_SECONDS);
 
@@ -407,6 +415,11 @@ public class GameScreen implements Screen {
             // How long the screen has been free of signs (and not frozen): the turn sign waits for a short gap
             signFreeTime = (signs.isShowing() || frozen) ? 0f : signFreeTime + delta;
             switch (stage) {
+                case DIALOGUE:
+                    if (game.isTransitioning()) break;
+                    dialogue.update(delta, game.input().menu().confirm, anyoneHolds());
+                    if (dialogue.isFinished()) stage = Stage.MANO;
+                    break;
                 case MANO:
                     if (!game.isTransitioning()) updateMano(delta);
                     break;
@@ -470,7 +483,8 @@ public class GameScreen implements Screen {
         drawCourt();
         camera.position.set(VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f, 0);
         camera.update();
-        if (offscreen) blur.endScene(Math.max(Math.max(signs.blurAmount(), pauseFade), manoFade), SIGN_BLUR_RADIUS);
+        if (offscreen) blur.endScene(Math.max(Math.max(signs.blurAmount(), pauseFade), Math.max(manoFade, dialogueFade)),
+            SIGN_BLUR_RADIUS);
 
         // 2. HUD, sign and aim meter on top: steady and sharp
         viewport.apply();
@@ -489,6 +503,7 @@ public class GameScreen implements Screen {
         }
 
         if (manoFade > 0f) drawMano(manoFade);
+        if (dialogueFade > 0f) dialogue.draw(spriteBatch, shapeRenderer, font, hints, VIEW_X, VIEW_Y, VIEW_W, dialogueFade);
         if (pauseFade > 0f) pauseMenu.draw(shapeRenderer, spriteBatch, font, pauseLabels(), pauseFade);
     }
 
@@ -787,6 +802,28 @@ public class GameScreen implements Screen {
         return 270f - i * 90f;
     }
 
+    /** The intro dialogue for this many players (a random variant), with the players' names filled in. */
+    private DialogueBox loadIntroDialogue() {
+        Array<DialogueScript.Line> lines = new Array<>();
+        if (Gdx.files.internal("dialogue/intro.txt").exists()) {
+            DialogueScript script = DialogueScript.parse(Gdx.files.internal("dialogue/intro.txt").readString("UTF-8"));
+            if (script.problems() > 0) Gdx.app.error("Dialogue", script.problems() + " line(s) in dialogue/intro.txt could not be read");
+            lines = script.pick(characters.length, names, new java.util.Random());
+        }
+        return new DialogueBox(lines, characters, names, audio);
+    }
+
+    /** True while anyone holds B (skips the dialogue when held long enough). */
+    private boolean anyoneHolds() {
+        for (int i = 0; i < match.players().size; i++) if (match.players().get(i).input.b) return true;
+        return false;
+    }
+
+    /** Before the mano has picked the Taya: nobody is shown as Taya yet. */
+    private boolean beforeTaya() {
+        return stage == Stage.DIALOGUE || stage == Stage.MANO;
+    }
+
     private void updateMano(float delta) {
         for (int i = 0; i < match.players().size; i++) {
             PlayerInput in = match.players().get(i).input;
@@ -1071,7 +1108,7 @@ public class GameScreen implements Screen {
         Player taya = match.taya();
         font.getData().setScale(1f);
         for (Player p : match.players()) {
-            String text = (p == taya && stage != Stage.MANO) ? p.label() + " TAYA" : p.label();
+            String text = (p == taya && !beforeTaya()) ? p.label() + " TAYA" : p.label();
             Color c = p.color();
             float a = (p != taya && p.hasThrown) ? 0.7f : 1f;
             // the player's colour with a dark stroke, readable on any part of the court
@@ -1206,14 +1243,14 @@ public class GameScreen implements Screen {
         font.getData().setScale(1.2f);
         font.setColor(Color.WHITE);
 
-        if (stage != Stage.MANO) {
+        if (!beforeTaya()) {
             font.draw(spriteBatch, statusText(), VIEW_X + VIEW_W / 2f - 300f, VIEW_Y + VIEW_H - 54f, 600f, Align.center, false);
         }
 
         font.getData().setScale(1.5f);
         float y = VIEW_Y + VIEW_H - 16f;
         for (Player p : match.players()) {
-            String role = (p == match.taya() && stage != Stage.MANO) ? " (Taya)" : ""; // no Taya until the mano picks one
+            String role = (p == match.taya() && !beforeTaya()) ? " (Taya)" : ""; // no Taya until the mano picks one
             String line = p.label() + " " + Characters.TRAITS[p.characterIndex] + role + "  " + p.score;
             font.setColor(0f, 0f, 0f, 0.85f); // drop shadow, so it reads on the busy background
             font.draw(spriteBatch, line, VIEW_X + 22f, y - 2f);
@@ -1406,6 +1443,8 @@ public class GameScreen implements Screen {
         if (canSheet != null) canSheet.dispose();
         if (signs != null) signs.dispose();
         for (Texture t : new Texture[] { handFist, handUp, handDown, manoBack, manoSelect }) if (t != null) t.dispose();
+        if (dialogue != null) dialogue.dispose();
+        if (hints != null) hints.dispose();
         if (audio != null) audio.playBackgroundMusic(null);
         if (effects != null) effects.dispose();
         if (blur != null) blur.dispose();

@@ -60,6 +60,7 @@ public class PlayerSelectScreen implements Screen {
     private Viewport viewport;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
+    private ControlHints hints;
     private BitmapFont font;
     private final GlyphLayout layout = new GlyphLayout();
 
@@ -100,6 +101,7 @@ public class PlayerSelectScreen implements Screen {
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
         font = Fonts.create();
+        hints = new ControlHints();
 
         background = loadTexture(BACKGROUND_FILE);
         backdrop = game.getBackdrop();
@@ -207,6 +209,7 @@ public class PlayerSelectScreen implements Screen {
         }
 
         batch.end();
+        hints.draw(batch, shapeRenderer, font, MENU_WIDTH / 2f, 40f, 1f, ControlHints.Icon.A, "PICK");
     }
 
     private void drawLabel(int index, String text) {
@@ -296,6 +299,7 @@ public class PlayerSelectScreen implements Screen {
         if (batch != null) { batch.dispose(); batch = null; }
         if (shapeRenderer != null) { shapeRenderer.dispose(); shapeRenderer = null; }
         if (font != null) { font.dispose(); font = null; }
+        if (hints != null) { hints.dispose(); hints = null; }
         if (background != null) { background.dispose(); background = null; }
         backdrop = null; // owned by TumbalataGame and shared with the other menu screens
         for (int i = 0; i < buttonTextures.length; i++) {

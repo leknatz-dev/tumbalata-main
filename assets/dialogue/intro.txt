@@ -1,0 +1,48 @@
+# Intro dialogue: the kids calling each other out to play, shown before the mano.
+#
+# [2], [3], [4] start a script for that many players. Write several sections with the same number and the game
+# picks one at random each match.
+# Each line is  SPEAKER: text   where SPEAKER is P1, P2, P3, P4 or ALL (everyone at once).
+# {P1} ... {P4} become the players' names. Lines starting with # are notes and are ignored.
+
+[2]
+P1: Uy {P2}! Tumba lata tayo!
+P2: Tayong dalawa lang? Sige na nga!
+P1: Ako na kukuha ng lata!
+ALL: Maiba taya!
+
+[2]
+P2: {P1}! Labas ka na, maglaro tayo!
+P1: Teka lang, suot ko pa tsinelas ko!
+P2: Bilis! Bago pa tayo tawagin pauwi!
+ALL: Maiba taya!
+
+[3]
+P1: Uy! Laro tayo ng tumba lata!
+P2: Sige! Sino pa?
+P1: {P3}! Tara dito!
+P3: Andiyan na! May lata ka?
+P1: Meron! Galing sa tindahan!
+ALL: Maiba taya!
+
+[3]
+P3: {P1}, {P2}! Tumba lata tayo!
+P2: Game! Pero bawal dayaan ha!
+P1: Ikaw nga 'yung madaya eh!
+ALL: Maiba taya!
+
+[4]
+P1: Uy! Laro tayo ng tumba lata!
+P2: Sige! Sino pa?
+P1: {P3}! {P4}! Tara dito!
+P3: Teka lang, kukunin ko tsinelas ko!
+P4: Ako na may lata!
+ALL: Maiba taya!
+
+[4]
+P2: {P1}! Labas ka na, laro tayo!
+P1: Sino-sino tayo?
+P2: Andito na sina {P3} at {P4}!
+P4: Bilisan niyo, mag-didilim na!
+P3: Basta ako hindi taya ha!
+ALL: Maiba taya!

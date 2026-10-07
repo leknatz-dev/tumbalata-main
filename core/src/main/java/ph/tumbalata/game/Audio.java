@@ -54,6 +54,7 @@ public final class Audio {
         DOG_BARK("dog_bark", 0.8f),           // a stray dog trots onto the court
         POOP_SQUISH("poop_squish", 0.9f),     // a player steps in the dog's poop
         // Pop-up signs (each sign plays its own; GAME START! uses GAME_START and GOOD JOB! uses GAME_END)
+        DIALOGUE_BLIP("dialogue_blip", 0.45f), // a voice blip while dialogue text types (pitched per character)
         SIGN_RUN("sign_run", 0.8f),
         SIGN_HAHA("sign_haha", 0.8f),
         SIGN_MY_TURN("sign_my_turn", 0.8f),

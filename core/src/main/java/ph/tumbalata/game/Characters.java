@@ -28,17 +28,17 @@ public final class Characters {
     // character is faster than normal in either role.
     public static final String[] TRAITS = { "FAST", "STRONG", "SNIPER", "SNEAKY" };
     public static final String[] TRAIT_HINTS = {
-        "Runs faster, throws weaker",
-        "Throws harder and further",
-        "Long aim arrow, slower aim meter",
-        "Grabs slippers from further away"
+        "Runs faster, harder to aim",
+        "Throws harder, a bit slower, harder to aim",
+        "Long aim arrow and easy aim, weaker throw",
+        "Grabs slippers from further away, a bit faster"
     };
     /** Running speed. */
-    public static final float[] SPEED = { 1.12f, 1.00f, 1.00f, 1.00f };
+    public static final float[] SPEED = { 1.12f, 0.92f, 1.00f, 1.05f };
     /** Slipper throw speed, and how far Taya tosses the can. */
-    public static final float[] THROW = { 0.90f, 1.15f, 1.00f, 1.00f };
+    public static final float[] THROW = { 1.00f, 1.15f, 0.90f, 1.00f };
     /** Aim meter speed (angle swing and power bar): lower is slower, so easier to time. */
-    public static final float[] AIM = { 1.00f, 1.00f, 0.75f, 1.00f };
+    public static final float[] AIM = { 1.20f, 1.15f, 0.75f, 1.00f };
     /** Reach for picking up their slipper. */
     public static final float[] REACH = { 1.00f, 1.00f, 1.00f, 1.40f };
     /** Gets the long aim arrow (assets/arrow_sniper.png) instead of the default one. */
