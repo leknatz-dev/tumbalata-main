@@ -1,0 +1,5 @@
+# Extra controller mappings (SDL GameControllerDB format), loaded at startup by the desktop launcher.
+# Add a line here for any pad the game does not see. Find a pad's GUID with tools/PadProbe.java.
+# Layout: the usual PlayStation-style USB adapter numbering (Triangle 0, Circle 1, Cross 2, Square 3,
+# L2 4, R2 5, L1 6, R1 7, Select 8, Start 9, L3 10, R3 11, D-pad on hat 0): Cross = A, Circle = B.
+03000000790000000600000000000000,USB Joystick (PS layout),a:b2,b:b1,x:b3,y:b0,back:b8,start:b9,leftshoulder:b6,rightshoulder:b7,lefttrigger:b4,righttrigger:b5,leftstick:b10,rightstick:b11,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,leftx:a0,lefty:a1,rightx:a2,righty:a3,platform:Windows,

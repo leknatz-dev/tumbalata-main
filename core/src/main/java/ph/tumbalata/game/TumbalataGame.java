@@ -9,6 +9,18 @@ import com.badlogic.gdx.Screen;
  * Screens should switch with changeScreen(...) and call toggleFullscreen() on F11.
  */
 public class TumbalataGame extends Game {
+    // Platform step run before the controllers are read (the desktop launcher loads extra pad mappings here)
+    private final Runnable controllerSetup;
+
+    public TumbalataGame() {
+        this(null);
+    }
+
+    /** @param controllerSetup run once at startup, before any controller is read (may be null) */
+    public TumbalataGame(Runnable controllerSetup) {
+        this.controllerSetup = controllerSetup;
+    }
+
     private static final int DEFAULT_WINDOW_W = 700;
     private static final int DEFAULT_WINDOW_H = 500;
 
@@ -41,7 +53,9 @@ public class TumbalataGame extends Game {
     private static boolean isMenuScreen(Screen screen) {
         return screen instanceof MainMenuScreen
             || screen instanceof PlayerSelectScreen
-            || screen instanceof CharacterSelectScreen;
+            || screen instanceof NameEntryScreen
+            || screen instanceof CharacterSelectScreen
+            || screen instanceof VictoryScreen;
     }
 
     // Sweep animation played over every screen change
@@ -54,10 +68,27 @@ public class TumbalataGame extends Game {
         return input;
     }
 
+    // All sound effects and music. One instance for the whole game.
+    private Audio audio;
+
+    public Audio audio() {
+        return audio;
+    }
+
+    // Saved game options (street events on/off)
+    private GameSettings settings;
+
+    public GameSettings settings() {
+        return settings;
+    }
+
     @Override
     public void create() {
         transition = new ScreenTransition();
+        if (controllerSetup != null) controllerSetup.run();
         input = new InputManager();
+        audio = new Audio();
+        settings = new GameSettings();
         // Size the launcher gave the window (also where "untouched" starts)
         autoW = Gdx.graphics.getWidth();
         autoH = Gdx.graphics.getHeight();
@@ -68,6 +99,11 @@ public class TumbalataGame extends Game {
     // current screen has drawn its last frame (which becomes the transition's snapshot).
     private Screen pendingScreen;
     private int pendingW, pendingH;
+
+    /** True while a screen change is pending or its can sweep is still playing. */
+    public boolean isTransitioning() {
+        return transition.isActive() || pendingScreen != null;
+    }
 
     /**
      * Switches screens with the can sweep. Requests made while a transition is already playing are ignored.
@@ -95,6 +131,8 @@ public class TumbalataGame extends Game {
     public void render() {
         input.setMenuLocked(transition.isActive());
         input.update();  // once per frame, before the screen reads it
+        if (!input.isTextEntry() && Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.M)) audio.toggleMute(); // M = mute (not while typing a name)
+        audio.update(Gdx.graphics.getDeltaTime()); // music fades
         super.render(); // draws the current screen (and lets it read input, which may request a screen change)
 
         if (pendingScreen != null) {
@@ -104,6 +142,7 @@ public class TumbalataGame extends Game {
 
             transition.captureSnapshot();               // the old screen's last frame
             transition.begin(() -> applyWindowSize(w, h));
+            audio.play(Audio.Sfx.TRANSITION_ROLL);
             switchNow(next);                            // the new screen is underneath; the snapshot covers it
             return;
         }
@@ -135,6 +174,7 @@ public class TumbalataGame extends Game {
     public void dispose() {
         if (transition != null) transition.dispose();
         if (input != null) input.dispose();
+        if (audio != null) audio.dispose();
         releaseBackdrop();
         super.dispose();
     }

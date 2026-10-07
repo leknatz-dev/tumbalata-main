@@ -8,6 +8,8 @@ public class Slipper {
     public Vector2 position;
     public Vector2 velocity;
     public float radius = 8f;
+    /** Fill colour; tinted per owner so each player can spot their own slipper. */
+    public final Color color = new Color(Color.BROWN);
 
     public Slipper(float x, float y) {
         this.position = new Vector2(x, y);
@@ -52,7 +54,7 @@ public class Slipper {
     }
 
     public void render(ShapeRenderer shapeRenderer) {
-        shapeRenderer.setColor(Color.BROWN);
+        shapeRenderer.setColor(color);
         shapeRenderer.ellipse(position.x - radius, position.y - 4, radius * 2, 8);
     }
 

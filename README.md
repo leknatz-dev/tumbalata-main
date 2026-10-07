@@ -1,33 +1,46 @@
-# TUMBALATAEXPO
+# Tumbalata
 
-A [libGDX](https://libgdx.com/) project generated with [gdx-liftoff](https://github.com/libgdx/gdx-liftoff).
+[![Build](https://github.com/leknatz-dev/tumbalata-main/actions/workflows/build.yml/badge.svg)](https://github.com/leknatz-dev/tumbalata-main/actions/workflows/build.yml)
 
-This project was generated with a template including simple application launchers and an `ApplicationAdapter` extension that draws libGDX logo.
+A 2D top-down arcade sports game for local multiplayer, based on the Filipino street game Tumba Preso. One player throws a slipper at a can, the other guards it, and roles swap on a hit or a tag. Built with Java 21 and LibGDX, played with up to four USB controllers.
 
-## Platforms
+See [docs/PRD.md](docs/PRD.md) for the full design, rules, architecture and roadmap.
 
-- `core`: Main module with the application logic shared by all platforms.
-- `lwjgl3`: Primary desktop platform using LWJGL3; was called 'desktop' in older docs.
+## Quick start
 
-## Gradle
+Requires JDK 21+ and internet on the first run (Gradle downloads itself and the libraries).
 
-This project uses [Gradle](https://gradle.org/) to manage dependencies.
-The Gradle wrapper was included, so you can run Gradle tasks using `gradlew.bat` or `./gradlew` commands.
-Useful Gradle tasks and flags:
+```
+.\gradlew.bat lwjgl3:run      # play
+.\gradlew.bat build           # compile and run tests
+.\gradlew.bat lwjgl3:jar      # runnable jar in lwjgl3/build/libs
+```
 
-- `--continue`: when using this flag, errors will not stop the tasks from running.
-- `--daemon`: thanks to this flag, Gradle daemon will be used to run chosen tasks.
-- `--offline`: when using this flag, cached dependency archives will be used.
-- `--refresh-dependencies`: this flag forces validation of all dependencies. Useful for snapshot versions.
-- `build`: builds sources and archives of every project.
-- `cleanEclipse`: removes Eclipse project data.
-- `cleanIdea`: removes IntelliJ project data.
-- `clean`: removes `build` folders, which store compiled classes and built archives.
-- `eclipse`: generates Eclipse project data.
-- `idea`: generates IntelliJ project data.
-- `lwjgl3:jar`: builds application's runnable jar, which can be found at `lwjgl3/build/libs`.
-- `lwjgl3:run`: starts the application.
-- `test`: runs unit tests (if any).
+Every push to `main` and every pull request is built by GitHub Actions. The runnable jar from each run is attached to the run page under **Artifacts**.
 
-Note that most tasks that are not specific to a single project can be run with `name:` prefix, where the `name` should be replaced with the ID of a specific project.
-For example, `core:clean` removes `build` folder only from the `core` project.
+## Repository layout
+
+| Path | What goes here |
+| --- | --- |
+| `core/` | All game code (`ph.tumbalata.game`) |
+| `lwjgl3/` | Desktop launcher and packaging (Construo) |
+| `assets/` | Only files the game loads at runtime. Names are case-sensitive. |
+| `art-src/` | Source files that are not shipped: `.ase`, `.psd`, raw audio, the Tiled project |
+| `docs/` | PRD, rule decisions, playtest notes |
+
+## Git LFS
+
+Source art (`*.ase`, `*.aseprite`, `*.psd`, `*.kra`) and anything under `art-src/` that is a PNG or raw audio is stored with Git LFS. Runtime files in `assets/` stay in normal git, so building never needs LFS. Run this once per machine:
+
+```
+git lfs install
+```
+
+## Workflow
+
+- `main` always builds. Work on a short branch (`feat/…`, `fix/…`, `art/…`, `chore/…`) and merge through a pull request.
+- Commit messages start with a type: `feat:`, `fix:`, `art:`, `audio:`, `docs:`, `chore:`, `refactor:`, `test:`.
+
+## Editing the map
+
+Open `art-src/tumbalata.tiled-project` in Tiled. It shows the `assets/` folder; edit `MAPCOLLISION.tmx` there. Collision layers are `collision1` and `collision2`, and layer offsets must stay at 0.

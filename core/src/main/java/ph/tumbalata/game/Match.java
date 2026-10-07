@@ -1,0 +1,1014 @@
+package ph.tumbalata.game;
+
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.utils.Array;
+
+/**
+ * The rules of a Tumbalata match: roles, round flow, tagging, scoring and the match timer.
+ * No rendering or GL code: GameScreen draws what this class says, and MatchTest plays rounds through it.
+ *
+ * <p>One Taya guards the can; everyone else is a Thrower with their own slipper. Each round the Throwers throw in turn
+ * order. Until someone hits the can, slippers stay where they land and nobody can be tagged. A hit starts the
+ * scramble; if everyone misses, Taya tosses the can at the slippers instead. During the scramble Taya can tag
+ * Throwers past the line once the can stands on its base again. See docs/PRD.md "Game concept and rules".
+ *
+ * <p>Call {@link #update(float)} once per frame. It reads each player's {@link PlayerInput}.
+ */
+public class Match {
+    // --- WORLD (gameplay grid; the court art is bigger, see GameScreen) ---
+    public static final float WORLD_WIDTH = 1280f;
+    public static final float WORLD_HEIGHT = 704f;
+    public static final float THROW_LINE_X = WORLD_WIDTH * 0.25f;
+    public static final float CAN_BASE_X = WORLD_WIDTH * 0.8f;
+    public static final float CAN_BASE_Y = WORLD_HEIGHT * 0.5f;
+
+    // Hard limits for player movement. The map's collision1 walls are the real court edges; these only stop players
+    // walking off the art. The bottom limit is below the court's bottom wall (about y -44) so the walls decide there.
+    public static final float PLAY_MIN_X = 20f;
+    public static final float PLAY_MAX_X = WORLD_WIDTH - 20f;
+    public static final float PLAY_MIN_Y = -54f;   // the art starts at y -64
+    public static final float PLAY_MAX_Y = WORLD_HEIGHT - 20f;
+
+    // Safety-net limits far outside the art (the view is x 0..1408, y -64..704)
+    private static final float OUTER_MIN_X = -256f;
+    private static final float OUTER_MIN_Y = -320f;
+    private static final float OUTER_MAX_X = 1664f;
+    private static final float OUTER_MAX_Y = 704f;
+
+    // --- DISTANCES ---
+    public static final float SLIPPER_PICKUP_DISTANCE = 45f;
+    public static final float CAN_PICKUP_DISTANCE = 35f;
+    public static final float CAN_PLACE_DISTANCE = 35f;
+    public static final float SLIPPER_HITS_CAN_DISTANCE = 25f;
+    public static final float CAN_HITS_SLIPPER_DISTANCE = 30f;
+    public static final float TAG_DISTANCE = 30f;
+    public static final float CAN_ON_BASE_DISTANCE = 10f;
+
+    // --- HITBOXES AND PHYSICS ---
+    public static final float PLAYER_HITBOX_W = 14f;
+    public static final float PLAYER_HITBOX_H = 10f;
+    public static final float PLAYER_HITBOX_OFFSET_Y = 0f;
+
+    private static final float CAN_MIN_THROW_DISTANCE = 40f;
+    private static final float CAN_MAX_THROW_DISTANCE = 500f;
+    private static final float CAN_POWER_CURVE = 1.5f;
+    private static final float CAN_RELEASE_HEIGHT = 30f;
+
+    public static final float CAN_HITBOX_W = 16f;
+    public static final float CAN_HITBOX_H = 16f;
+    public static final float CAN_HITBOX_OFFSET_X = 0f;
+    public static final float CAN_HITBOX_OFFSET_Y = 0f;
+    private static final float CAN_WALL_BOUNCE = 0.5f;
+    private static final float CAN_WALL_MAX_HEIGHT = 10000f;
+
+    private static final float SLIPPER_HITBOX_W = 12f;
+    private static final float SLIPPER_HITBOX_H = 12f;
+    private static final float SLIPPER_WALL_BOUNCE = 0.6f;
+    private static final float SLIPPER_SPEED_PER_POWER = 18f;
+
+    private static final float TOSS_IMPACT_DELAY = 0.6f; // seconds between Taya's can hitting a slipper and the swap
+    /** After a missed toss, Taya can't pick the can up for this long: the Throwers' head start for their slippers. */
+    public static final float CAN_LOCK_AFTER_MISS = 3f;
+
+    // --- SPAWNS (relative to the throw line / can base). Waiting Throwers stand behind the first one. ---
+    private static final float THROWER_SPAWN_BEHIND_LINE = 50f;
+    private static final float TAYA_SPAWN_RIGHT_OF_BASE = 80f;
+    private static final float[][] WAITING_THROWER_OFFSETS = { { -130f, 90f }, { -130f, -90f }, { -200f, 0f } };
+    private static final float EDGE_MARGIN = 20f;
+
+    // --- STREET EVENT: TRASH (see Trash) ---
+    public static final int TRASH_MAX = 3;
+    private static final float TRASH_FIRST_MIN = 8f, TRASH_FIRST_MAX = 14f;    // seconds until the first one
+    private static final float TRASH_EVERY_MIN = 15f, TRASH_EVERY_MAX = 25f;   // then between throws
+    private static final float TRASH_RETRY = 3f;          // court full / no free spot: try again this much later
+    public static final float TRASH_SLIP_DISTANCE = 16f;  // feet this close to landed trash = slip
+    public static final float FEET_OFFSET_Y = -19f;       // player position -> feet (where the shadow is drawn)
+    // Where trash may land: inside the court walls, not on the can base, other trash or a player
+    private static final float TRASH_MIN_X = 220f, TRASH_MAX_X = 1180f;
+    private static final float TRASH_MIN_Y = -20f, TRASH_MAX_Y = 330f;
+    private static final float TRASH_CLEAR_OF_BASE = 70f, TRASH_CLEAR_OF_TRASH = 50f, TRASH_CLEAR_OF_PLAYER = 45f;
+    private static final float TRASH_THROWN_FROM_Y = 480f; // over the fence at the top of the court
+
+    // --- STREET EVENT: STRAY DOG (see StrayDog). One poop at a time; it stays until someone steps in it. ---
+    private static final float DOG_FIRST_MIN = 15f, DOG_FIRST_MAX = 25f;   // seconds until the first dog
+    private static final float DOG_EVERY_MIN = 20f, DOG_EVERY_MAX = 35f;   // after the poop is stepped in
+    public static final float POOP_STUN_SECONDS = 1.5f;
+    public static final float POOP_STEP_DISTANCE = 16f;
+
+    /** Where the round is. */
+    public enum RoundMode {
+        /** Throwers take turns. Nobody has hit the can yet: slippers stay where they land and nobody can be tagged. */
+        THROWING,
+        /** Everyone threw and missed: Taya picks up the can and tosses it at a slipper. */
+        TAYA_TOSS,
+        /** Taya's can is in the air or rolling. */
+        TOSS_FLYING,
+        /**
+         * The can was hit, or Taya's toss missed: Throwers grab their own slipper and run home, Taya stands the can
+         * back up and then may tag anyone past the line. Throwers who haven't thrown yet still may.
+         */
+        SCRAMBLE,
+        /** Before the first round: Taya carries the can around the can zone and stands it on a spot (B). The clock
+         * is stopped and only Taya moves. That spot is the can's base for the rest of the match. */
+        PLACE_CAN
+    }
+
+    public enum Aim { NONE, ANGLE, POWER }
+
+    /** Hooks for effects, sounds and HUD pop-ups. All methods are optional. */
+    public interface Events {
+        default void scored(Player player, int points) {}
+        default void slipperThrown(Player thrower) {}
+        default void canTossed(Player taya) {}
+        /** Everyone missed: it is Taya's turn to toss the can. */
+        default void tayaTossTurn(Player taya) {}
+        /** Taya's can stopped without hitting a slipper: the scramble starts. */
+        default void tossMissed(Player taya) {}
+        default void canKnocked(Player thrower) {}
+        default void tagged(Player taya, Player victim) {}
+        default void tossHitSlipper(Player taya, Player victim) {}
+        default void roundEnded() {}
+        /** Street event: trash is about to be thrown in (its warning circle appears). */
+        default void trashIncoming(Trash trash) {}
+        default void trashLanded(Trash trash) {}
+        default void slipped(Player player, Trash trash) {}
+        /** Street event: a stray dog starts trotting onto the court. */
+        default void dogArrived(StrayDog dog) {}
+        default void dogPooped(StrayDog dog) {}
+        default void steppedInPoop(Player player) {}
+        /** It is now this Thrower's turn to throw (at the start of a round and after each throw). */
+        default void throwerTurn(Player thrower) {}
+        /** Taya stood the can on its spot for this match (the first round starts now). */
+        default void canSpotChosen(Vector2 spot) {}
+    }
+
+    private static final Events NO_EVENTS = new Events() {};
+
+    // Loop over players by index, never with for-each: libGDX Array iterators cannot be nested, and event handlers
+    // (GameScreen) query the match, which loops over the players, while the match is in the middle of a loop.
+    private final Array<Player> players;
+    private final Roster roster;
+    private final Can can;
+    private final MapCollision playerWalls;
+    private final MapCollision canBlockers;
+    private final Vector2 canBase = new Vector2(CAN_BASE_X, CAN_BASE_Y);
+    private Events events = NO_EVENTS;
+
+    private RoundMode mode = RoundMode.THROWING;
+    private Aim aim = Aim.NONE;
+    private Player aimer;  // who is aiming (a Thrower or Taya), null when aim == NONE
+    private Player taya;   // shortcut to the roster's Taya, refreshed by applyRoles()
+
+    private float angleTimer = 0f, currentAngle = 0f;
+    private float powerTimer = 0f, currentPower = 0f;
+
+    private final Vector2 canLandingSpot = new Vector2();
+    private boolean isImpactPending = false;
+    private float impactDelayTimer = 0f;
+    private Player impactVictim; // whose slipper Taya's can hit
+
+    private float timeLeft;
+    private boolean over = false;
+
+    private final MatchStats stats;
+
+    // The line between Throwers and Taya, and the Throwers' spawn area (from the map; straight at THROW_LINE_X in tests)
+    private CourtLine court = CourtLine.straight(THROW_LINE_X);
+    private Player announcedTurn; // last Thrower reported through Events.throwerTurn
+    private float canLockTimer = 0f; // seconds left before Taya may pick the can up after a missed toss
+    private int knocksThisRound = 0; // can knocks since the round started (2+ = a streak)
+
+    // Optional rules, off unless the game turns them on (so tests stay neutral)
+    private boolean characterTraits = false;
+    private boolean streetEvents = false;
+    private java.util.Random rng = new java.util.Random();
+    private final Array<Trash> trash = new Array<>();
+    private float trashTimer = 0f;
+    private StrayDog dog;       // null = no dog around
+    private Vector2 poop;       // null = no poop on the court
+    private float dogTimer = 0f;
+
+    /**
+     * @param players     2 to 4 players, index = player id, each with a {@link Player#slipper}
+     * @param can         the can (its position is reset to the base)
+     * @param playerWalls walls for players and slippers
+     * @param canBlockers walls for the can
+     * @param matchTime   match length in seconds
+     */
+    public Match(Array<Player> players, Can can, MapCollision playerWalls, MapCollision canBlockers, float matchTime) {
+        for (int i = 0; i < players.size; i++) {
+            if (players.get(i).id != i) throw new IllegalArgumentException("players must be in id order");
+            if (players.get(i).slipper == null) throw new IllegalArgumentException("player " + i + " has no slipper");
+        }
+        this.players = players;
+        this.roster = new Roster(players.size);
+        this.can = can;
+        this.playerWalls = playerWalls;
+        this.canBlockers = canBlockers;
+        this.timeLeft = matchTime;
+        this.stats = new MatchStats(players.size);
+        resetRound(false);
+    }
+
+    public void setEvents(Events events) {
+        this.events = events == null ? NO_EVENTS : events;
+    }
+
+    /** Moves the can's base (where it stands, and where Taya puts it back), and starts the round over. */
+    public void setCanBase(float x, float y) {
+        canBase.set(x, y);
+        resetRound(false);
+    }
+
+    /** Uses the map's court line and throw area, and starts the round over so everyone spawns in the right place. */
+    public void setCourt(CourtLine court) {
+        this.court = court;
+        resetRound(false);
+    }
+
+    public CourtLine court() {
+        return court;
+    }
+
+    /** Each character's trait (speed, throw, aim, reach; see {@link Characters}) applies. Off by default. */
+    public void setCharacterTraits(boolean enabled) {
+        characterTraits = enabled;
+        applyRoles();
+    }
+
+    /** Street events (trash thrown onto the court). Off by default. */
+    public void setStreetEvents(boolean enabled) {
+        setStreetEvents(enabled, System.nanoTime());
+    }
+
+    /** Same, with a fixed random seed (tests). */
+    public void setStreetEvents(boolean enabled, long seed) {
+        streetEvents = enabled;
+        rng = new java.util.Random(seed);
+        trashTimer = randomBetween(TRASH_FIRST_MIN, TRASH_FIRST_MAX);
+        dogTimer = randomBetween(DOG_FIRST_MIN, DOG_FIRST_MAX);
+    }
+
+    private float randomBetween(float min, float max) {
+        return min + rng.nextFloat() * (max - min);
+    }
+
+    private float speedFactor(Player p) { return characterTraits ? Characters.SPEED[p.characterIndex] : 1f; }
+    private float throwFactor(Player p) { return characterTraits ? Characters.THROW[p.characterIndex] : 1f; }
+    private float aimFactor(Player p) { return characterTraits ? Characters.AIM[p.characterIndex] : 1f; }
+    private float reachFactor(Player p) { return characterTraits ? Characters.REACH[p.characterIndex] : 1f; }
+
+    // ------------------------------------------------------------------
+    // State for drawing and tests
+    // ------------------------------------------------------------------
+
+    public Array<Player> players() { return players; }
+    public Roster roster() { return roster; }
+    public Player taya() { return taya; }
+    public Can can() { return can; }
+    public Vector2 canBase() { return canBase; }
+    public RoundMode mode() { return mode; }
+    public Aim aim() { return aim; }
+    public Player aimer() { return aimer; }
+    public float angle() { return currentAngle; }
+    public float power() { return currentPower; }
+    public float timeLeft() { return Math.max(0f, timeLeft); }
+    public boolean isOver() { return over; }
+    /** Seconds left of the head start after a missed toss (0 = Taya may pick the can up). */
+    public float canLockTimeLeft() { return canLockTimer; }
+    /** How many times the can was knocked down this round (the first knock is 1; 2+ is a streak). */
+    public int knocksThisRound() { return knocksThisRound; }
+    public MatchStats stats() { return stats; }
+    /** Trash on (or flying onto) the court. */
+    public Array<Trash> trash() { return trash; }
+    /** The stray dog, or null. */
+    public StrayDog dog() { return dog; }
+    /** Where the dog's poop is, or null when there is none. */
+    public Vector2 poop() { return poop; }
+
+    /** One score per player, index = player id. */
+    public int[] scores() {
+        int[] s = new int[players.size];
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            s[p.id] = p.score;
+        }
+        return s;
+    }
+
+    /** The Thrower whose turn it is to throw: the first one in turn order who hasn't thrown yet, or null. */
+    public Player nextThrower() {
+        for (int i = 0; i < roster.throwers().size; i++) {
+            Player p = players.get(roster.throwers().get(i));
+            if (!p.hasThrown) return p;
+        }
+        return null;
+    }
+
+    public boolean isCanStanding() {
+        return !can.isHit && !taya.hasCan;
+    }
+
+    public boolean isCanStandingOnBase() {
+        return isCanStanding() && can.position.dst(canBase) < CAN_ON_BASE_DISTANCE;
+    }
+
+    /** Taya may pick the can up when it has been knocked over (or tossed), or to toss it when everyone missed. */
+    public boolean canTayaPickUpCan() {
+        if (taya.hasCan || taya.isStunned() || canLockTimer > 0f) return false;
+        return (mode == RoundMode.SCRAMBLE && can.isHit) || mode == RoundMode.TAYA_TOSS;
+    }
+
+    public boolean isTayaNearCan() {
+        return taya.position.dst(can.position) < CAN_PICKUP_DISTANCE;
+    }
+
+    public boolean canTayaPlaceCan() {
+        return mode == RoundMode.SCRAMBLE && taya.hasCan && !taya.isStunned()
+            && taya.position.dst(canBase) < CAN_PLACE_DISTANCE;
+    }
+
+    /** Slippers on the ground may only be picked up once the can was hit or Taya's toss missed. */
+    public boolean canPickUpSlipper(Player p) {
+        return mode == RoundMode.SCRAMBLE && p != taya && !p.hasSlipper && !p.isStunned()
+            && p.position.dst(p.slipper.position) < SLIPPER_PICKUP_DISTANCE * reachFactor(p);
+    }
+
+    /** True for a Thrower whose slipper is on the ground or flying (so it should be drawn). */
+    public boolean isSlipperOut(Player p) {
+        return p != taya && !p.hasSlipper;
+    }
+
+    private boolean allSlippersStopped() {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (isSlipperOut(p) && p.slipper.velocity.len() > 0) return false;
+        }
+        return true;
+    }
+
+    /** True when no Thrower holds a slipper and every slipper lies still on Taya's side of the line. */
+    public boolean allSlippersDownPastLine() {
+        boolean anyThrower = false;
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (p == taya) continue;
+            anyThrower = true;
+            if (p.hasSlipper || p.slipper.velocity.len() > 0 || !court.isPast(p.slipper.position)) return false;
+        }
+        return anyThrower;
+    }
+
+    /** The round is over when every Thrower is back behind the line holding their own slipper. */
+    private boolean everyoneHome() {
+        if (aim != Aim.NONE) return false;
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (p == taya) continue;
+            if (!p.hasSlipper || court.isPast(p.position)) return false;
+        }
+        return true;
+    }
+
+    // ------------------------------------------------------------------
+    // Frame
+    // ------------------------------------------------------------------
+
+    /** Advances the match by one frame: timer, input, movement, physics and rules. */
+    public void update(float delta) {
+        if (over) return;
+        if (mode == RoundMode.PLACE_CAN) { // choosing the can spot: no clock, only Taya moves
+            updateCanPlacement(delta);
+            return;
+        }
+        timeLeft -= delta;
+        canLockTimer = Math.max(0f, canLockTimer - delta);
+        if (timeLeft <= 0f) {
+            over = true;
+            return;
+        }
+
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            p.prevPosition.set(p.position);
+        }
+        handleInput(delta);
+        step(delta);
+        announceTurn();
+    }
+
+    /** Tells the screen when the Thrower whose turn it is changes. */
+    private void announceTurn() {
+        Player up = (mode == RoundMode.THROWING || mode == RoundMode.SCRAMBLE) ? nextThrower() : null;
+        if (up == announcedTurn) return;
+        announcedTurn = up;
+        if (up != null) events.throwerTurn(up);
+    }
+
+    private void handleInput(float delta) {
+        // --- Movement: everyone, except a Thrower who is aiming and Taya holding the can for the toss ---
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (p.isStunned()) {
+                p.updateSlip(delta); // slipped on trash: no control until it wears off
+                continue;
+            }
+            if (isFrozen(p)) {
+                p.stop();
+                continue;
+            }
+            p.handleInput(delta);
+        }
+
+        // --- B: Throwers pick up their own slipper ---
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (p.input.bPressed && canPickUpSlipper(p)) p.hasSlipper = true;
+        }
+
+        // --- B: Taya picks up the can, or puts it back on its base ---
+        if (taya.input.bPressed && !taya.isStunned()) {
+            if (canTayaPickUpCan() && isTayaNearCan()) {
+                taya.hasCan = true;
+            } else if (canTayaPlaceCan()) {
+                taya.hasCan = false;
+                can.reset(canBase.x, canBase.y);
+            }
+        }
+
+        // --- A: aim (angle, then power, then release) ---
+        if (aim == Aim.NONE) {
+            Player up = nextThrower();
+            if ((mode == RoundMode.THROWING || mode == RoundMode.SCRAMBLE) && up != null && up.hasSlipper
+                && !up.isStunned() && up.input.aPressed) {
+                startAim(up);
+            } else if (mode == RoundMode.SCRAMBLE && rethrower() != null) {
+                startAim(rethrower());
+            } else if (mode == RoundMode.TAYA_TOSS && taya.hasCan && !taya.isStunned() && taya.input.aPressed) {
+                startAim(taya);
+            }
+        } else if (aimer.input.aPressed) {
+            if (aim == Aim.ANGLE) {
+                aim = Aim.POWER;
+                powerTimer = 0f;
+            } else {
+                Player who = aimer;
+                aim = Aim.NONE;
+                aimer = null;
+                if (who == taya) {
+                    tayaThrowCan();
+                    mode = RoundMode.TOSS_FLYING;
+                } else {
+                    launchSlipper(who);
+                }
+            }
+        }
+    }
+
+    /**
+     * During the scramble, a Thrower who is home (behind the line with their slipper, after throwing) may throw again,
+     * e.g. to knock the can down so a teammate still out there can run home. The first one to press A this frame.
+     */
+    private Player rethrower() {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (canRethrow(p) && p.input.aPressed) return p;
+        }
+        return null;
+    }
+
+    /** True for a Thrower who is home during the scramble and may throw their slipper again. */
+    public boolean canRethrow(Player p) {
+        return mode == RoundMode.SCRAMBLE && p != taya && p.hasThrown && p.hasSlipper && !p.isStunned()
+            && !court.isPast(p.position);
+    }
+
+    /** Makes this player the first Taya (picked by the mano before the match) and starts the round over. */
+    public void chooseFirstTaya(int playerId) {
+        roster.startWithTaya(playerId);
+        resetRound(false);
+    }
+
+    /**
+     * Taya carries the can and chooses where it stands for this match (inside the map's can zone). Does nothing if
+     * the map has no can zone. The match goes on to the first round when the can is placed.
+     */
+    public void beginCanPlacement() {
+        if (!court.hasCanZone()) return;
+        mode = RoundMode.PLACE_CAN;
+        aim = Aim.NONE;
+        aimer = null;
+        taya.hasCan = true;
+        Vector2 centre = court.canZoneCentre();
+        taya.position.set(centre.x, centre.y - FEET_OFFSET_Y); // feet in the middle of the zone
+        can.position.set(taya.position.x, taya.position.y + 15);
+    }
+
+    /** While choosing the can spot: true when Taya stands where the can may go (inside the can zone). */
+    public boolean canPlaceCanHere() {
+        return mode == RoundMode.PLACE_CAN && court.inCanZone(taya.position.x, taya.position.y + FEET_OFFSET_Y);
+    }
+
+    private void updateCanPlacement(float delta) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            p.prevPosition.set(p.position);
+            if (p == taya) p.handleInput(delta);
+            else p.stop();
+            p.update(delta);
+        }
+        playerWalls.slide(taya.position, taya.prevPosition.x, taya.prevPosition.y,
+            PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
+        can.position.set(taya.position.x, taya.position.y + 15);
+
+        if (taya.input.bPressed && canPlaceCanHere()) {
+            canBase.set(taya.position.x, taya.position.y + FEET_OFFSET_Y); // the can stands at Taya's feet
+            resetRound(false);
+            events.canSpotChosen(canBase);
+        }
+    }
+
+    /** Starts the current round over (same roles, same turn order). Used by the pause menu. */
+    public void restartRound() {
+        resetRound(false);
+    }
+
+    /**
+     * A Thrower stands still while aiming. Taya stands still from picking up the can for the toss until throwing it,
+     * so the toss always leaves from where the can was picked up.
+     */
+    public boolean isFrozen(Player p) {
+        if (p == taya) return mode == RoundMode.TAYA_TOSS && taya.hasCan;
+        return p == aimer;
+    }
+
+    private void startAim(Player p) {
+        aimer = p;
+        aim = Aim.ANGLE;
+        angleTimer = 0f;
+    }
+
+    private void step(float delta) {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            p.update(delta);
+            playerWalls.slide(p.position, p.prevPosition.x, p.prevPosition.y,
+                PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
+        }
+        if (taya.hasCan) can.position.set(taya.position.x, taya.position.y + 15);
+
+        if (aim == Aim.ANGLE) {
+            float aimSpeed = aimFactor(aimer);
+            if (aimer == taya) {
+                angleTimer += delta * 4f * aimSpeed;
+                currentAngle = (angleTimer * 50f) % 360f;
+            } else {
+                angleTimer += delta * 3.5f * aimSpeed;
+                currentAngle = MathUtils.sin(angleTimer) * 80f;
+            }
+        } else if (aim == Aim.POWER) {
+            powerTimer += delta * 4f * aimFactor(aimer);
+            currentPower = ((MathUtils.sin(powerTimer) + 1f) / 2f) * 100f;
+        }
+
+        updateTrash(delta);
+        updateCan(delta);
+
+        // Slippers on the ground or in flight; a moving slipper knocks over a standing can
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (!isSlipperOut(p)) continue;
+            boolean moving = p.slipper.velocity.len() > 0;
+            updateSlipper(p.slipper, delta);
+            if (moving && isCanStanding() && mode != RoundMode.TOSS_FLYING
+                && p.slipper.position.dst(can.position) < SLIPPER_HITS_CAN_DISTANCE) {
+                triggerCanHit(p);
+            }
+        }
+
+        switch (mode) {
+            case THROWING:
+                // Everyone threw, nothing hit the can: Taya's turn to toss
+                if (nextThrower() == null && aim == Aim.NONE && allSlippersStopped()) {
+                    mode = RoundMode.TAYA_TOSS;
+                    events.tayaTossTurn(taya);
+                }
+                break;
+
+            case TAYA_TOSS:
+                break;
+
+            case TOSS_FLYING:
+                if (isImpactPending) {
+                    impactDelayTimer += delta;
+                    if (impactDelayTimer >= TOSS_IMPACT_DELAY) {
+                        isImpactPending = false;
+                        impactDelayTimer = 0f;
+                        swapRoles(impactVictim);
+                    }
+                    return;
+                }
+
+                if (can.zPosition <= 0 && can.zVelocity <= 0) {
+                    for (int pi = 0; pi < players.size; pi++) {
+                        Player p = players.get(pi);
+                        if (!isSlipperOut(p)) continue;
+                        if (can.position.dst(p.slipper.position) < CAN_HITS_SLIPPER_DISTANCE) {
+                            triggerTayaCanHitSlipper(p);
+                            return;
+                        }
+                    }
+                    if (can.velocity.len() == 0) {
+                        mode = RoundMode.SCRAMBLE; // missed: grab your slippers and run!
+                        canLockTimer = CAN_LOCK_AFTER_MISS; // head start: Taya can't pick the can up yet
+                        events.tossMissed(taya);
+                    }
+                }
+                break;
+
+            case SCRAMBLE:
+                if (everyoneHome()) {
+                    endRoundNormally();
+                    return;
+                }
+                // Every slipper is lying in Taya's area and the can is up: Taya gets to toss the can at them
+                if (aim == Aim.NONE && !taya.hasCan && isCanStandingOnBase() && allSlippersDownPastLine()) {
+                    mode = RoundMode.TAYA_TOSS;
+                    events.tayaTossTurn(taya);
+                    break;
+                }
+                checkTagging();
+                break;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Street event: trash
+    // ------------------------------------------------------------------
+
+    private void updateTrash(float delta) {
+        for (int i = trash.size - 1; i >= 0; i--) {
+            Trash t = trash.get(i);
+            if (t.update(delta)) events.trashLanded(t);
+            if (t.isExpired()) trash.removeIndex(i);
+        }
+
+        // Stepping on landed trash: slide, then stunned. Slippers and the can just pass over it.
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (!p.isMoving() || p.isStunned()) continue;
+            float feetY = p.position.y + FEET_OFFSET_Y;
+            for (int i = trash.size - 1; i >= 0; i--) {
+                Trash t = trash.get(i);
+                if (!t.isLanded()) continue;
+                if (Vector2.dst(p.position.x, feetY, t.target.x, t.target.y) < TRASH_SLIP_DISTANCE) {
+                    p.slip(p.velocity.x, p.velocity.y);
+                    stats.slips[p.id]++;
+                    trash.removeIndex(i); // used up
+                    events.slipped(p, t);
+                    break;
+                }
+            }
+        }
+
+        updateDog(delta);
+
+        if (!streetEvents) return;
+        trashTimer -= delta;
+        if (trashTimer > 0f) return;
+        trashTimer = throwTrash() ? randomBetween(TRASH_EVERY_MIN, TRASH_EVERY_MAX) : TRASH_RETRY;
+    }
+
+    private void updateDog(float delta) {
+        if (dog != null) {
+            if (dog.update(delta)) {
+                poop = new Vector2(dog.spot);
+                events.dogPooped(dog);
+            }
+            if (dog.state == StrayDog.State.GONE) dog = null;
+        }
+
+        // Stepping in the poop: stunned on the spot, and the poop is gone
+        if (poop != null) {
+            for (int pi = 0; pi < players.size; pi++) {
+                Player p = players.get(pi);
+                if (!p.isMoving() || p.isStunned()) continue;
+                if (Vector2.dst(p.position.x, p.position.y + FEET_OFFSET_Y, poop.x, poop.y) < POOP_STEP_DISTANCE) {
+                    p.stun(POOP_STUN_SECONDS);
+                    stats.poopSteps[p.id]++;
+                    poop = null;
+                    dogTimer = randomBetween(DOG_EVERY_MIN, DOG_EVERY_MAX);
+                    events.steppedInPoop(p);
+                    break;
+                }
+            }
+        }
+
+        // A new dog only comes when there is no dog and no poop
+        if (!streetEvents || dog != null || poop != null) return;
+        dogTimer -= delta;
+        if (dogTimer > 0f) return;
+        if (!sendDog()) dogTimer = TRASH_RETRY;
+    }
+
+    /** Sends a dog towards a random free spot. False if no spot was found. */
+    private boolean sendDog() {
+        for (int attempt = 0; attempt < 30; attempt++) {
+            float x = randomBetween(TRASH_MIN_X, TRASH_MAX_X);
+            float y = randomBetween(TRASH_MIN_Y, TRASH_MAX_Y);
+            if (!isFreeTrashSpot(x, y)) continue;
+            dog = new StrayDog(x, y, rng.nextBoolean());
+            events.dogArrived(dog);
+            return true;
+        }
+        return false;
+    }
+
+    /** Puts poop on the court right away (tests). */
+    void dropPoop(float x, float y) {
+        poop = new Vector2(x, y);
+    }
+
+    /** Throws one piece of trash at a random free spot on the court. False if the court is full or no spot found. */
+    private boolean throwTrash() {
+        if (trash.size >= TRASH_MAX) return false;
+        for (int attempt = 0; attempt < 30; attempt++) {
+            float x = randomBetween(TRASH_MIN_X, TRASH_MAX_X);
+            float y = randomBetween(TRASH_MIN_Y, TRASH_MAX_Y);
+            if (!isFreeTrashSpot(x, y)) continue;
+            Trash t = new Trash(x + randomBetween(-150f, 150f), TRASH_THROWN_FROM_Y, x, y, rng.nextInt(Trash.KINDS));
+            trash.add(t);
+            events.trashIncoming(t);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isFreeTrashSpot(float x, float y) {
+        if (court.inThrowArea(x, y)) return false; // never where the Throwers spawn
+        if (playerWalls.isBlocked(x, y - FEET_OFFSET_Y, PLAYER_HITBOX_W + 10f, PLAYER_HITBOX_H + 10f)) return false;
+        if (Vector2.dst(x, y, canBase.x, canBase.y + FEET_OFFSET_Y) < TRASH_CLEAR_OF_BASE) return false;
+        for (int i = 0; i < trash.size; i++) {
+            if (trash.get(i).target.dst(x, y) < TRASH_CLEAR_OF_TRASH) return false;
+        }
+        if (poop != null && poop.dst(x, y) < TRASH_CLEAR_OF_TRASH) return false;
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (Vector2.dst(x, y, p.position.x, p.position.y + FEET_OFFSET_Y) < TRASH_CLEAR_OF_PLAYER) return false;
+        }
+        return true;
+    }
+
+    /** Puts landed trash on the court right away (tests). */
+    Trash dropTrash(float x, float y) {
+        Trash t = Trash.landed(x, y);
+        trash.add(t);
+        return t;
+    }
+
+    private void updateCan(float delta) {
+        if (taya.hasCan) return; // carried
+
+        float oldX = can.position.x;
+        float oldY = can.position.y;
+
+        can.update(delta, OUTER_MIN_X, OUTER_MIN_Y, OUTER_MAX_X, OUTER_MAX_Y);
+
+        if (can.zPosition > CAN_WALL_MAX_HEIGHT) return;
+
+        canBlockers.sweep(can.position, can.velocity, oldX, oldY,
+            CAN_HITBOX_W, CAN_HITBOX_H, CAN_HITBOX_OFFSET_X, CAN_HITBOX_OFFSET_Y, CAN_WALL_BOUNCE);
+    }
+
+    private void updateSlipper(Slipper slipper, float delta) {
+        float oldX = slipper.position.x;
+        float oldY = slipper.position.y;
+
+        slipper.update(delta, OUTER_MIN_X, OUTER_MIN_Y, OUTER_MAX_X, OUTER_MAX_Y);
+
+        playerWalls.sweep(slipper.position, slipper.velocity, oldX, oldY,
+            SLIPPER_HITBOX_W, SLIPPER_HITBOX_H, 0f, 0f, SLIPPER_WALL_BOUNCE);
+    }
+
+    // ------------------------------------------------------------------
+    // Rules
+    // ------------------------------------------------------------------
+
+    private void award(Player p, int points) {
+        if (points == 0) return;
+        p.score += points;
+        events.scored(p, points);
+    }
+
+    /** True if any Thrower is past the throw line right now. */
+    public boolean isAnyThrowerPastLine() {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (p != taya && court.isPast(p.position)) return true;
+        }
+        return false;
+    }
+
+    /** A Thrower can be tagged while holding their slipper past the line. Only crossing back over the line is safe. */
+    public boolean isTaggable(Player p) {
+        return p != taya && p.hasSlipper && court.isPast(p.position);
+    }
+
+    /** Once the can stands on its base again, Taya can tag a taggable Thrower. */
+    private void checkTagging() {
+        if (!isCanStandingOnBase() || taya.isStunned()) return;
+
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (!isTaggable(p)) continue;
+            if (taya.position.dst(p.position) < TAG_DISTANCE) {
+                award(taya, Scoring.TAG);
+                stats.tags[taya.id]++;
+                stats.caught[p.id]++;
+                events.tagged(taya, p);
+                swapRoles(p);
+                return;
+            }
+        }
+    }
+
+    private void endRoundNormally() {
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            if (p != taya && p.hasThrown) {
+                award(p, Scoring.HOME_SAFE);
+                stats.safeRuns[p.id]++;
+            }
+        }
+        events.roundEnded();
+        resetRound(true);
+    }
+
+    /** {@code newTaya} (a Thrower) becomes Taya; the old Taya becomes a Thrower and throws first. */
+    private void swapRoles(Player newTaya) {
+        roster.swapWithTaya(newTaya.id);
+        resetRound(false);
+    }
+
+    private void launchSlipper(Player p) {
+        // Once their slipper is thrown, a Thrower may cross the line (until the round resets)
+        p.setXBounds(PLAY_MIN_X, PLAY_MAX_X);
+        p.keepBehind(null, 0f);
+        p.hasThrown = true;
+        p.hasSlipper = false;
+
+        p.slipper.position.set(p.position);
+        float rad = currentAngle * MathUtils.degreesToRadians;
+        float speed = currentPower * SLIPPER_SPEED_PER_POWER * throwFactor(p);
+        p.slipper.velocity.set(MathUtils.cos(rad) * speed, MathUtils.sin(rad) * speed);
+        events.slipperThrown(p);
+    }
+
+    private void triggerCanHit(Player thrower) {
+        Slipper slipper = thrower.slipper;
+        can.isHit = true;
+        mode = RoundMode.SCRAMBLE;
+        taya.hasCan = false;
+
+        float hitAngle = MathUtils.atan2(can.position.y - slipper.position.y, can.position.x - slipper.position.x);
+        float slipperImpactSpeed = slipper.velocity.len();
+
+        float speedMultiplier = slipperImpactSpeed * 0.85f;
+        float targetVx = MathUtils.cos(hitAngle) * speedMultiplier;
+        float targetVy = MathUtils.sin(hitAngle) * speedMultiplier;
+
+        float equivalentPower = MathUtils.clamp((slipperImpactSpeed / 1200f) * 100f, 20f, 100f);
+
+        can.toss(targetVx, targetVy, equivalentPower);
+        slipper.velocity.scl(0.5f);
+
+        knocksThisRound++;
+        award(thrower, Scoring.KNOCK_CAN);
+        stats.knocks[thrower.id]++;
+        events.canKnocked(thrower);
+    }
+
+    private void tayaThrowCan() {
+        taya.hasCan = false;
+        float rad = currentAngle * MathUtils.degreesToRadians;
+
+        can.position.set(taya.position);
+        can.zPosition = CAN_RELEASE_HEIGHT;
+        can.zVelocity = 0f;
+        can.velocity.set(0f, 0f);
+
+        float distance = tossDistance(currentPower) * throwFactor(taya);
+        canLandingSpot.set(taya.position).add(MathUtils.cos(rad) * distance, MathUtils.sin(rad) * distance);
+
+        can.tossTo(canLandingSpot.x, canLandingSpot.y, currentPower);
+        events.canTossed(taya);
+    }
+
+    /** Where Taya's can first lands, measured from Taya, for a toss at {@code power} (0..100). */
+    public static float tossDistance(float power) {
+        float powerRatio = MathUtils.clamp(power / 100f, 0f, 1f);
+        return CAN_MIN_THROW_DISTANCE
+            + (CAN_MAX_THROW_DISTANCE - CAN_MIN_THROW_DISTANCE) * (float) Math.pow(powerRatio, CAN_POWER_CURVE);
+    }
+
+    private void triggerTayaCanHitSlipper(Player victim) {
+        isImpactPending = true;
+        impactDelayTimer = 0f;
+        impactVictim = victim;
+
+        Slipper slipper = victim.slipper;
+        float hitAngle = MathUtils.atan2(slipper.position.y - can.position.y, slipper.position.x - can.position.x);
+        float knockbackSpeed = 350f;
+        slipper.velocity.set(MathUtils.cos(hitAngle) * knockbackSpeed, MathUtils.sin(hitAngle) * knockbackSpeed);
+
+        can.velocity.scl(0.3f);
+        can.zVelocity = 120f;
+
+        award(taya, Scoring.TOSS_HIT);
+        stats.tossHits[taya.id]++;
+        stats.caught[victim.id]++;
+        events.tossHitSlipper(taya, victim);
+    }
+
+    /**
+     * Starts a new round: everyone back on their spawn spot, Throwers holding their slipper and not yet thrown.
+     * @param nextTurn true when the round ended normally, so a different Thrower throws first next time
+     */
+    private void resetRound(boolean nextTurn) {
+        mode = RoundMode.THROWING;
+        aim = Aim.NONE;
+        aimer = null;
+
+        if (nextTurn) roster.nextTurn();
+        announcedTurn = null; // the new round's first Thrower gets announced
+        applyRoles();
+        for (int pi = 0; pi < players.size; pi++) players.get(pi).clearSlip();
+
+        // Throwers in turn order: the first one at the line, the rest on the waiting spots behind it
+        for (int i = 0; i < roster.throwers().size; i++) {
+            Player p = players.get(roster.throwers().get(i));
+            p.setXBounds(PLAY_MIN_X, PLAY_MAX_X);
+            p.keepBehind(court, EDGE_MARGIN);
+            p.hasSlipper = true;
+            p.hasThrown = false;
+            p.hasCan = false;
+            throwerSpawn(i, p.position);
+            p.slipper.reset(p.position.x, p.position.y);
+        }
+
+        taya.setXBounds(PLAY_MIN_X, PLAY_MAX_X);
+        taya.keepBehind(null, 0f);
+        taya.position.set(canBase.x + TAYA_SPAWN_RIGHT_OF_BASE, canBase.y);
+        taya.hasCan = false;
+        taya.hasSlipper = false;
+        taya.hasThrown = false;
+        taya.slipper.reset(taya.position.x, taya.position.y);
+
+        can.reset(canBase.x, canBase.y);
+
+        angleTimer = 0f;
+        powerTimer = 0f;
+        isImpactPending = false;
+        impactDelayTimer = 0f;
+        impactVictim = null;
+        canLockTimer = 0f;
+        knocksThisRound = 0;
+    }
+
+    /**
+     * Where the i-th Thrower in turn order starts: the first one just behind the line, the rest on waiting spots
+     * further back. With a throw area from the map, every spot is pulled inside that area and out of the walls.
+     */
+    private void throwerSpawn(int i, Vector2 out) {
+        float y = court.hasThrowArea() ? court.throwAreaCentre().y : WORLD_HEIGHT * 0.5f;
+        out.set(court.xAt(y) - THROWER_SPAWN_BEHIND_LINE, y);
+        if (i > 0) {
+            float[] spot = WAITING_THROWER_OFFSETS[(i - 1) % WAITING_THROWER_OFFSETS.length];
+            out.add(spot[0], spot[1]);
+        }
+        if (!court.hasThrowArea()) return;
+
+        Vector2 centre = court.throwAreaCentre();
+        for (int step = 0; step < 8 && !isGoodSpawn(out); step++) {
+            out.lerp(centre, 0.35f); // pull towards the middle of the throw area until it fits
+        }
+        if (!isGoodSpawn(out)) out.set(centre);
+    }
+
+    private boolean isGoodSpawn(Vector2 p) {
+        return court.inThrowArea(p.x, p.y + FEET_OFFSET_Y)
+            && !playerWalls.isBlocked(p.x, p.y, PLAYER_HITBOX_W, PLAYER_HITBOX_H)
+            && !court.isPast(p.x + EDGE_MARGIN, p.y);
+    }
+
+    /** Points the taya shortcut at the roster's Taya; every player gets their role's speed times their trait. */
+    private void applyRoles() {
+        taya = players.get(roster.taya());
+        for (int pi = 0; pi < players.size; pi++) {
+            Player p = players.get(pi);
+            float base = roster.isTaya(p.id) ? GameConstants.TAYA_SPEED : GameConstants.PLAYER_SPEED;
+            p.speed = base * speedFactor(p);
+        }
+    }
+}

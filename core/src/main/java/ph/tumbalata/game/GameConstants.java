@@ -5,7 +5,7 @@ public class GameConstants {
     public static final float WORLD_HEIGHT = 720f;
     
     public static final float PLAYER_SPEED = 200f;
-    public static final float TAYA_SPEED = 190f;
+    public static final float TAYA_SPEED = 215f; // a little faster than the Throwers, so Taya can catch up
     
     // Friction for concrete surface (higher resistance than ice)
     public static final float SLIPPER_FRICTION = 2.2f; 

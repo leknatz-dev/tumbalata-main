@@ -13,7 +13,7 @@ import com.badlogic.gdx.utils.Array;
  *  - 4 player slots (MAX_PLAYERS). Slot 0 = Player 1 ... slot 3 = Player 4.
  *  - Controllers are assigned to the first free slot as they connect (or are already connected at startup),
  *    and the slot is freed when one is unplugged. Identical pads work fine: slots follow plug-in order.
- *  - Slots 0 and 1 also have keyboard schemes, so the game is playable and testable without pads.
+ *  - Every slot also has a keyboard scheme (P1 WASD, P2 arrows, P3 IJKL, P4 numpad), so it is testable without pads.
  *  - update() runs once per frame BEFORE the screen, so every screen sees the same state.
  *  - menu() gives merged input for the menus: any controller or the keyboard can navigate.
  *
@@ -45,7 +45,18 @@ public final class InputManager {
         new int[]{Input.Keys.SPACE, Input.Keys.ENTER}, new int[]{Input.Keys.E, Input.Keys.SHIFT_RIGHT},
         new int[]{Input.Keys.R}, new int[]{});
 
-    private static final KeyScheme[] KEY_SCHEMES = { KEYS_P1, KEYS_P2, null, null };
+    // Player 3: I J K L. A = U, B = O. (So 3-4 player matches can be tested on one keyboard.)
+    private static final KeyScheme KEYS_P3 = new KeyScheme(
+        new int[]{Input.Keys.I}, new int[]{Input.Keys.K}, new int[]{Input.Keys.J}, new int[]{Input.Keys.L},
+        new int[]{Input.Keys.U}, new int[]{Input.Keys.O}, new int[]{}, new int[]{});
+
+    // Player 4: numpad 8 4 5 6. A = Numpad 0, B = Numpad . (Num Lock on)
+    private static final KeyScheme KEYS_P4 = new KeyScheme(
+        new int[]{Input.Keys.NUMPAD_8}, new int[]{Input.Keys.NUMPAD_5}, new int[]{Input.Keys.NUMPAD_4},
+        new int[]{Input.Keys.NUMPAD_6}, new int[]{Input.Keys.NUMPAD_0}, new int[]{Input.Keys.NUMPAD_DOT},
+        new int[]{}, new int[]{});
+
+    private static final KeyScheme[] KEY_SCHEMES = { KEYS_P1, KEYS_P2, KEYS_P3, KEYS_P4 };
 
     // ---- one controller slot ----
     private static final class Pad {
@@ -66,6 +77,7 @@ public final class InputManager {
 
     private final MenuInput menu = new MenuInput();
     private boolean menuLocked = false;
+    private boolean textEntry = false; // typing a name: keyboard keys are text, not player controls
     private final ControllerAdapter listener;
 
     public InputManager() {
@@ -112,7 +124,10 @@ public final class InputManager {
             if (pads[i].controller == null) {
                 pads[i].controller = controller;
                 pads[i].profile = ControllerProfile.forController(controller);
-                Gdx.app.log("Input", "Player " + (i + 1) + " controller: " + controller.getName());
+                ControllerProfile pr = pads[i].profile;
+                Gdx.app.log("Input", "Player " + (i + 1) + " controller: " + controller.getName() + " (A=" + pr.a + " B=" + pr.b
+                    + " Select=" + pr.select + " Start=" + pr.start + ", buttons " + controller.getMinButtonIndex() + ".."
+                    + controller.getMaxButtonIndex() + ")");
                 return;
             }
         }
@@ -171,9 +186,26 @@ public final class InputManager {
         if (menuLocked) menu.clearNavigation();
     }
 
+    /**
+     * While true the keyboard is for typing (names): the per-player keyboard schemes and the M mute key are off, so
+     * typing "SAM" doesn't move Player 1. Controllers keep working.
+     */
+    public void setTextEntry(boolean on) {
+        textEntry = on;
+    }
+
+    public boolean isTextEntry() {
+        return textEntry;
+    }
+
     /** While true the menus ignore input (used during the screen transition, so a button mash can't hit the new screen). */
     public void setMenuLocked(boolean locked) {
         menuLocked = locked;
+    }
+
+    /** True during a screen transition. Menus that read per-player input (not menu()) should ignore it then. */
+    public boolean isMenuLocked() {
+        return menuLocked;
     }
 
     private static boolean button(Controller c, int code) {
@@ -238,7 +270,7 @@ public final class InputManager {
         boolean up = pad.up, down = pad.down, left = pad.left, right = pad.right;
         boolean a = pad.a, b = pad.b, select = pad.select, start = pad.start;
 
-        if (ks != null) {
+        if (ks != null && !textEntry) {
             up |= anyKey(ks.up);
             down |= anyKey(ks.down);
             left |= anyKey(ks.left);

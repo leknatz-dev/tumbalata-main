@@ -4,6 +4,7 @@ import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -27,21 +28,27 @@ public class PlayerSelectScreen implements Screen {
     private static final int GAME_WINDOW_H = 698;
 
     private static final String BACKGROUND_FILE = "menu_background.png";
-    private static final String BUTTON_3P_FILE = "3p_button.png";
-    private static final String BUTTON_4P_FILE = "4p_button.png";
+    // One button per choice. A missing image (2p_button.png does not exist yet) draws a labelled placeholder.
+    private static final int[] PLAYER_COUNTS = { 2, 3, 4 };
+    private static final String[] BUTTON_FILES = { "2p_button.png", "3p_button.png", "4p_button.png" };
     private static final String SLIPPER_FILE = "menu_slipper.png";
     private static final String HEADING_FILE = "menu_title.png";
 
     private static final float BUTTON_W = 144f;
     private static final float BUTTON_H = 100f;
-    private static final float BUTTON_3P_X = 176f;
-    private static final float BUTTON_3P_Y = 200f;
-    private static final float BUTTON_4P_X = 380f;
-    private static final float BUTTON_4P_Y = 200f;
+    private static final float BUTTON_GAP = 30f;
+    private static final float BUTTONS_Y = 200f;
+    private static final float BUTTONS_START_X =
+        (MENU_WIDTH - (PLAYER_COUNTS.length * BUTTON_W + (PLAYER_COUNTS.length - 1) * BUTTON_GAP)) / 2f;
 
     private static final float HEADING_CENTER_Y = 380f;
     private static final float HEADING_BOB_AMOUNT = 6f;
     private static final float HEADING_BOB_SPEED = 2.5f;
+
+    // Street events on/off, under the buttons (Down to select it, A / Enter or Left / Right to switch)
+    private static final float TOGGLE_W = 260f;
+    private static final float TOGGLE_H = 34f;
+    private static final float TOGGLE_Y = 112f;
 
     private static final float SLIPPER_GAP = 10f;
     private static final float SLIPPER_BOB_AMOUNT = 5f;
@@ -59,14 +66,15 @@ public class PlayerSelectScreen implements Screen {
     private Texture background;
     private MenuBackdrop backdrop; // shared live background (null = use the image background)
     private static final float BACKDROP_DIM = 0.35f;
-    private Texture button3pTexture;
-    private Texture button4pTexture;
+    private final Texture[] buttonTextures = new Texture[PLAYER_COUNTS.length];
     private Texture slipperTexture;
     private Texture headingTexture;
 
-    private final Rectangle[] buttonBounds = new Rectangle[2];
-    private final int[] playerCounts = { 3, 4 };
-    private int selected = 0;
+    private final Rectangle[] buttonBounds = new Rectangle[PLAYER_COUNTS.length];
+    private int selected = 0; // 0..2 = player-count buttons, TOGGLE = the street events switch
+    private static final int TOGGLE = PLAYER_COUNTS.length;
+    private final Rectangle toggleBounds = new Rectangle((MENU_WIDTH - TOGGLE_W) / 2f, TOGGLE_Y, TOGGLE_W, TOGGLE_H);
+    private int lastButton = 0; // the button Up returns to from the switch
     private float time = 0f;
     private boolean leaving = false;
     private final Vector2 mouse = new Vector2();
@@ -83,6 +91,7 @@ public class PlayerSelectScreen implements Screen {
     @Override
     public void show() {
         leaving = false;
+        game.audio().playMusic(Audio.Track.MENU); // keeps playing if it already is
 
         camera = new OrthographicCamera();
         viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
@@ -90,17 +99,16 @@ public class PlayerSelectScreen implements Screen {
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
-        font = new BitmapFont();
+        font = Fonts.create();
 
         background = loadTexture(BACKGROUND_FILE);
         backdrop = game.getBackdrop();
-        button3pTexture = loadTexture(BUTTON_3P_FILE);
-        button4pTexture = loadTexture(BUTTON_4P_FILE);
+        for (int i = 0; i < PLAYER_COUNTS.length; i++) {
+            buttonTextures[i] = loadTexture(BUTTON_FILES[i]);
+            buttonBounds[i] = new Rectangle(BUTTONS_START_X + i * (BUTTON_W + BUTTON_GAP), BUTTONS_Y, BUTTON_W, BUTTON_H);
+        }
         slipperTexture = loadTexture(SLIPPER_FILE);
         headingTexture = loadTexture(HEADING_FILE);
-
-        buttonBounds[0] = new Rectangle(BUTTON_3P_X, BUTTON_3P_Y, BUTTON_W, BUTTON_H);
-        buttonBounds[1] = new Rectangle(BUTTON_4P_X, BUTTON_4P_Y, BUTTON_W, BUTTON_H);
     }
 
     private Texture loadTexture(String file) {
@@ -128,28 +136,50 @@ public class PlayerSelectScreen implements Screen {
             backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
         }
 
-        Rectangle sel = buttonBounds[selected];
+        Rectangle sel = selected == TOGGLE ? toggleBounds : buttonBounds[selected];
         float bob = (MathUtils.sin(time * SLIPPER_BOB_SPEED) + 1f) / 2f * SLIPPER_BOB_AMOUNT;
 
-        if (background == null || button3pTexture == null || button4pTexture == null || slipperTexture == null) {
+        boolean anyButtonMissing = false;
+        for (Texture t : buttonTextures) anyButtonMissing |= t == null;
+        if (background == null || anyButtonMissing || slipperTexture == null) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
             if (backdrop == null && background == null) {
                 shapeRenderer.setColor(0.18f, 0.35f, 0.25f, 1f);
                 shapeRenderer.rect(0, 0, MENU_WIDTH, MENU_HEIGHT);
             }
             shapeRenderer.setColor(Color.DARK_GRAY);
-            if (button3pTexture == null) shapeRenderer.rect(buttonBounds[0].x, buttonBounds[0].y, BUTTON_W, BUTTON_H);
-            if (button4pTexture == null) shapeRenderer.rect(buttonBounds[1].x, buttonBounds[1].y, BUTTON_W, BUTTON_H);
+            for (int i = 0; i < buttonBounds.length; i++) {
+                if (buttonTextures[i] == null) shapeRenderer.rect(buttonBounds[i].x, buttonBounds[i].y, BUTTON_W, BUTTON_H);
+            }
             if (slipperTexture == null) {
                 shapeRenderer.setColor(Color.BROWN);
-                shapeRenderer.ellipse(sel.x + (BUTTON_W - 40f) / 2f, sel.y - SLIPPER_GAP - 16f + bob, 40f, 16f);
+                shapeRenderer.ellipse(sel.x + (sel.width - 40f) / 2f, sel.y - SLIPPER_GAP - 16f + bob, 40f, 16f);
             }
             shapeRenderer.end();
         }
 
+        // Street events switch: dark panel, green when on
+        boolean eventsOn = game.settings().streetEvents();
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0f, 0f, 0f, selected == TOGGLE ? 0.75f : 0.5f);
+        shapeRenderer.rect(toggleBounds.x, toggleBounds.y, toggleBounds.width, toggleBounds.height);
+        shapeRenderer.setColor(eventsOn ? 0.3f : 0.55f, eventsOn ? 0.75f : 0.3f, 0.3f, 1f);
+        shapeRenderer.rect(toggleBounds.x + toggleBounds.width - 52f, toggleBounds.y + 6f, 44f, toggleBounds.height - 12f);
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+
         batch.begin();
 
         if (backdrop == null && background != null) batch.draw(background, 0, 0, MENU_WIDTH, MENU_HEIGHT);
+
+        layout.setText(font, "STREET EVENTS");
+        font.draw(batch, "STREET EVENTS", toggleBounds.x + 14f, toggleBounds.y + (toggleBounds.height + layout.height) / 2f);
+        String state = eventsOn ? "ON" : "OFF";
+        layout.setText(font, state);
+        font.draw(batch, state, toggleBounds.x + toggleBounds.width - 30f - layout.width / 2f,
+            toggleBounds.y + (toggleBounds.height + layout.height) / 2f);
 
         float headingBob = MathUtils.sin(time * HEADING_BOB_SPEED) * HEADING_BOB_AMOUNT;
         if (headingTexture != null) {
@@ -163,16 +193,15 @@ public class PlayerSelectScreen implements Screen {
             font.getData().setScale(1f);
         }
 
-        if (button3pTexture != null) batch.draw(button3pTexture, buttonBounds[0].x, buttonBounds[0].y, BUTTON_W, BUTTON_H);
-        else drawLabel(0, "3P");
-
-        if (button4pTexture != null) batch.draw(button4pTexture, buttonBounds[1].x, buttonBounds[1].y, BUTTON_W, BUTTON_H);
-        else drawLabel(1, "4P");
+        for (int i = 0; i < buttonBounds.length; i++) {
+            if (buttonTextures[i] != null) batch.draw(buttonTextures[i], buttonBounds[i].x, buttonBounds[i].y, BUTTON_W, BUTTON_H);
+            else drawLabel(i, PLAYER_COUNTS[i] + "P");
+        }
 
         if (slipperTexture != null) {
             float sw = slipperTexture.getWidth();
             float sh = slipperTexture.getHeight();
-            float sx = sel.x + (BUTTON_W - sw) / 2f;
+            float sx = sel.x + (sel.width - sw) / 2f;
             float sy = sel.y - SLIPPER_GAP - sh + bob;
             batch.draw(slipperTexture, sx, sy, sw, sh);
         }
@@ -190,15 +219,22 @@ public class PlayerSelectScreen implements Screen {
         InputManager.MenuInput in = game.input().menu(); // keyboard + every controller, merged
         if (in.fullscreen) game.toggleFullscreen();
         if (leaving) return; // a screen change was requested; the screen keeps drawing while the transition plays
-        if (in.left) {
-            selected = (selected + buttonBounds.length - 1) % buttonBounds.length;
-        }
-        if (in.right) {
-            selected = (selected + 1) % buttonBounds.length;
+        int before = selected;
+        if (selected == TOGGLE) {
+            if (in.left || in.right) toggleStreetEvents();
+            if (in.up) selected = lastButton;
+        } else {
+            if (in.left) selected = (selected + buttonBounds.length - 1) % buttonBounds.length;
+            if (in.right) selected = (selected + 1) % buttonBounds.length;
+            if (in.down) {
+                lastButton = selected;
+                selected = TOGGLE;
+            }
         }
 
         if (in.back) {
             leaving = true;
+            game.audio().play(Audio.Sfx.UI_BACK);
             if (game != null) {
                 game.changeScreen(new MainMenuScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
             }
@@ -215,19 +251,30 @@ public class PlayerSelectScreen implements Screen {
         for (int i = 0; i < buttonBounds.length; i++) {
             if (buttonBounds[i].contains(mouse.x, mouse.y)) hovered = i;
         }
+        if (toggleBounds.contains(mouse.x, mouse.y)) hovered = TOGGLE;
         if (hovered != -1 && mouseMoved) selected = hovered;
 
         boolean confirm = in.confirm;
         boolean clicked = Gdx.input.justTouched() && hovered != -1;
         if (clicked) selected = hovered;
 
-        if (confirm || clicked) startGame(playerCounts[selected]);
+        if (selected != before) game.audio().play(Audio.Sfx.UI_MOVE);
+        if (confirm || clicked) {
+            if (selected == TOGGLE) toggleStreetEvents();
+            else startGame(PLAYER_COUNTS[selected]);
+        }
+    }
+
+    private void toggleStreetEvents() {
+        game.settings().setStreetEvents(!game.settings().streetEvents());
+        game.audio().play(Audio.Sfx.UI_CONFIRM);
     }
 
     private void startGame(int playerCount) {
         leaving = true;
+        game.audio().play(Audio.Sfx.UI_CONFIRM);
         if (game != null) {
-            game.changeScreen(new CharacterSelectScreen(game, playerCount), MENU_WINDOW_W, MENU_WINDOW_H);
+            game.changeScreen(new NameEntryScreen(game, playerCount), MENU_WINDOW_W, MENU_WINDOW_H);
         }
     }
 
@@ -251,8 +298,9 @@ public class PlayerSelectScreen implements Screen {
         if (font != null) { font.dispose(); font = null; }
         if (background != null) { background.dispose(); background = null; }
         backdrop = null; // owned by TumbalataGame and shared with the other menu screens
-        if (button3pTexture != null) { button3pTexture.dispose(); button3pTexture = null; }
-        if (button4pTexture != null) { button4pTexture.dispose(); button4pTexture = null; }
+        for (int i = 0; i < buttonTextures.length; i++) {
+            if (buttonTextures[i] != null) { buttonTextures[i].dispose(); buttonTextures[i] = null; }
+        }
         if (slipperTexture != null) { slipperTexture.dispose(); slipperTexture = null; }
         if (headingTexture != null) { headingTexture.dispose(); headingTexture = null; }
     }
