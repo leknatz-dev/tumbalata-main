@@ -124,7 +124,10 @@ public class GameScreen implements Screen {
     private PlayerView[] views;         // how each player looks, by player id
     private CanView canView;
     private InputManager liveInputs;    // this frame's input, straight from the keyboard and pads
-    private PlayerInput[] simInputs;    // what the match reads: held buttons, plus presses kept until a step uses them
+    private PlayerInput[] simInputs;    // what the match reads, filled in from each step's InputFrame
+    private LocalInputSource localInput; // this device's keyboard and pads, as InputFrames
+    private InputSource[] inputSources; // where each player's input comes from (all this device, for now)
+    private final InputFrame frame = new InputFrame();
     private final FixedStep fixedStep = new FixedStep();
     private Signs signs;
     private CourtEffects effects;
@@ -209,6 +212,9 @@ public class GameScreen implements Screen {
         liveInputs = inputs;
         simInputs = new PlayerInput[characters.length];
         for (int id = 0; id < simInputs.length; id++) simInputs[id] = new PlayerInput();
+        localInput = new LocalInputSource(inputs);
+        inputSources = new InputSource[characters.length];
+        java.util.Arrays.fill(inputSources, localInput);
 
         map = new TmxMapLoader().load(MAP_FILE);
         mapRenderer = new OrthogonalTiledMapRenderer(map, 1f, spriteBatch);
@@ -440,10 +446,7 @@ public class GameScreen implements Screen {
         boolean pausedThisFrame = paused;
         handlePause();
         pausedThisFrame |= paused;
-        for (int id = 0; id < simInputs.length; id++) {
-            simInputs[id].latch(liveInputs.player(id));
-            if (pausedThisFrame) simInputs[id].clearPresses(); // the pause menu used them (A on RESUME is not a throw)
-        }
+        localInput.update(); // this frame's presses, kept for the next match step
         MatchFlow.Stage stage = flow.stage();
         pauseFade = paused ? Math.min(1f, pauseFade + delta / PAUSE_FADE_SECONDS)
             : Math.max(0f, pauseFade - delta / PAUSE_FADE_SECONDS);
@@ -461,7 +464,13 @@ public class GameScreen implements Screen {
             signs.update(delta);
             // How long the screen has been free of signs (and not frozen): the turn sign waits for a short gap
             signFreeTime = (signs.isShowing() || flow.isFrozen()) ? 0f : signFreeTime + delta;
-            if (pausedThisFrame) fixedStep.reset(); // just resumed: no catching up on the paused time
+            if (pausedThisFrame) { // just resumed: no catching up on the paused time
+                fixedStep.reset();
+                for (int id = 0; id < simInputs.length; id++) { // the pause menu used the buttons held now (A on RESUME is not a throw)
+                    inputSources[id].sample(id, frame);
+                    simInputs[id].hold(frame);
+                }
+            }
             stepFlow(fixedStep.advance(delta));
             if (flow.stage() == MatchFlow.Stage.PLAYING) showTurnSignWhenFree();
             if (flow.stage() == MatchFlow.Stage.DIALOGUE) dialogueBox.update(); // voice blips
@@ -810,14 +819,21 @@ public class GameScreen implements Screen {
     }
 
     /**
-     * Runs the match flow {@code steps} fixed steps (see {@link FixedStep}). Each step uses up the presses, except
-     * during a hit-stop: those wait for the action to start again. Players animate only while the match moves them.
+     * Runs the match flow {@code steps} fixed steps (see {@link FixedStep}). Each step first takes every player's
+     * {@link InputFrame} from their {@link InputSource}, except during a hit-stop (the input waits, presses and all).
+     * Players animate only while the match moves them.
      */
     private void stepFlow(int steps) {
         for (int i = 0; i < steps && flow.stage() != MatchFlow.Stage.DONE; i++) {
             MatchFlow.Stage stage = flow.stage();
             boolean frozen = flow.isFrozen();
             boolean moving = !frozen && (stage == MatchFlow.Stage.CAN_SPOT || stage == MatchFlow.Stage.PLAYING);
+            if (!frozen) { // each player's input for this step (during a hit-stop it waits, presses and all)
+                for (int id = 0; id < simInputs.length; id++) {
+                    inputSources[id].sample(id, frame);
+                    simInputs[id].apply(frame);
+                }
+            }
             for (PlayerView v : views) v.beforeStep();
             canView.beforeStep();
             flow.step(FixedStep.STEP, !game.isTransitioning());
@@ -826,7 +842,6 @@ public class GameScreen implements Screen {
                 canView.afterStep(FixedStep.STEP);
             }
             if (moving && stage == MatchFlow.Stage.PLAYING) effects.track(match, FixedStep.STEP); // dust, trails
-            if (!frozen) for (PlayerInput in : simInputs) in.clearPresses();
         }
     }
 
@@ -1042,7 +1057,7 @@ public class GameScreen implements Screen {
     private boolean pausePressed() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) || Gdx.input.isKeyJustPressed(Input.Keys.P)) return true;
         for (int i = 0; i < match.players().size; i++) {
-            PlayerInput in = liveInputs.player(i); // live: a press kept for the match must not pause twice
+            PlayerInput in = liveInputs.player(i); // this frame's input (the match gets its own per step)
             if (in.selectPressed || in.startPressed) return true;
         }
         return false;

@@ -1,9 +1,14 @@
 package ph.tumbalata.game;
 
 /**
- * One player's input for THIS frame, from the keyboard and/or that player's controller, already merged.
- * Game code only reads this and never cares where the input came from.
- * Filled in by InputManager.update(); no allocations, safe to read from anywhere during a frame.
+ * One player's input: what they hold, and what went down just now. Two uses:
+ * <ul>
+ * <li>Live, for this frame: filled in by {@link InputManager#update()} from the keyboard and that player's pad (the
+ * menus read this).</li>
+ * <li>In a match: filled in by {@link #apply} once per match step from an {@link InputFrame}, whatever the source
+ * (this device, touch, the network). The match only reads the stick, A, B and Start.</li>
+ * </ul>
+ * No allocations; safe to read from anywhere.
  */
 public final class PlayerInput {
     /** Movement, each -1..1 (diagonals are normalized so they are not faster). */
@@ -15,7 +20,7 @@ public final class PlayerInput {
     /** Buttons held this frame. */
     public boolean a, b, select, start;
 
-    /** True only on the frame the button/direction went down. */
+    /** True only on the frame (or match step) the button/direction went down. */
     public boolean upPressed, downPressed, leftPressed, rightPressed;
     public boolean aPressed, bPressed, selectPressed, startPressed;
 
@@ -26,34 +31,29 @@ public final class PlayerInput {
         return moveX != 0f || moveY != 0f;
     }
 
-    /**
-     * For a copy the match reads in its own fixed steps: takes what {@code live} holds right now, and keeps every press
-     * until {@link #clearPresses()} says a step has used it. So a frame that runs no step doesn't lose a press, and a
-     * frame that runs two doesn't press twice.
-     */
-    public void latch(PlayerInput live) {
-        moveX = live.moveX;
-        moveY = live.moveY;
-        up = live.up;
-        down = live.down;
-        left = live.left;
-        right = live.right;
-        a = live.a;
-        b = live.b;
-        select = live.select;
-        start = live.start;
-        controllerConnected = live.controllerConnected;
-        upPressed |= live.upPressed;
-        downPressed |= live.downPressed;
-        leftPressed |= live.leftPressed;
-        rightPressed |= live.rightPressed;
-        aPressed |= live.aPressed;
-        bPressed |= live.bPressed;
-        selectPressed |= live.selectPressed;
-        startPressed |= live.startPressed;
+    /** One match step: takes what the frame holds; a button is pressed on the step it goes down. */
+    public void apply(InputFrame frame) {
+        boolean wasA = a, wasB = b, wasStart = start;
+        moveX = frame.moveX();
+        moveY = frame.moveY();
+        a = frame.held(InputFrame.A);
+        b = frame.held(InputFrame.B);
+        start = frame.held(InputFrame.START);
+        aPressed = a && !wasA;
+        bPressed = b && !wasB;
+        startPressed = start && !wasStart;
     }
 
-    /** The presses have been used (by a match step, or by whatever read them this frame). */
+    /**
+     * Takes what the frame holds without any presses: those buttons were used elsewhere (the pause menu), so letting
+     * go and pressing again is needed before they count in the match.
+     */
+    public void hold(InputFrame frame) {
+        apply(frame);
+        clearPresses();
+    }
+
+    /** Nothing went down just now. */
     public void clearPresses() {
         upPressed = downPressed = leftPressed = rightPressed = false;
         aPressed = bPressed = selectPressed = startPressed = false;

@@ -159,6 +159,37 @@ class MatchFlowTest {
         assertEquals(new Vector2(900f, 100f), match.canBase());
     }
 
+    /** A scripted player: runs about, presses A and B now and then (different per player). */
+    private static InputFrame scripted(int player, int step, InputFrame out) {
+        float t = step * DT;
+        int buttons = 0;
+        if ((step + player * 17) % 90 < 6) buttons |= InputFrame.A;
+        if ((step + player * 29) % 140 < 5) buttons |= InputFrame.B;
+        return out.set((float) Math.cos(t * (1.3 + player)), (float) Math.sin(t * (0.9 + player * 0.4)), buttons);
+    }
+
+    /** Plays a whole flow from the same input frames; returns where everything ended up. */
+    private String replay(int steps) {
+        newFlow(3, 20f, lines("[3]\nP1: Uy!\nP2: Sige!\nP3: Tara!", 3));
+        match.setStreetEvents(true, 42L);
+        InputFrame f = new InputFrame();
+        for (int s = 0; s < steps; s++) {
+            if (!flow.isFrozen()) for (int p = 0; p < players.size; p++) players.get(p).input.apply(scripted(p, s, f));
+            flow.step(DT, true);
+        }
+        StringBuilder state = new StringBuilder(flow.stage() + " taya=" + match.taya().id + " t=" + match.timeLeft());
+        for (Player p : players) state.append(" | ").append(p.position).append(' ').append(p.slipper.position).append(' ').append(p.score);
+        return state.append(" can=").append(match.can().position).toString();
+    }
+
+    @Test
+    void theSameInputFramesPlayTheSameMatch() {
+        // What lets a host and the phones agree: the match only depends on the frames it is given
+        String first = replay(60 * 25), second = replay(60 * 25);
+        assertEquals(first, second);
+        assertFalse(first.startsWith("DIALOGUE") || first.startsWith("MANO"), "got into the match: " + first);
+    }
+
     @Test
     void passesOnEveryMatchEvent() throws Exception {
         // MatchFlow sees the match's events first; it must pass every one of them on to the screen

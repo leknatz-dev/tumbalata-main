@@ -1,8 +1,6 @@
 package ph.tumbalata.game;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -38,34 +36,5 @@ class FixedStepTest {
         step.advance(FixedStep.STEP * 0.9f);
         step.reset();
         assertEquals(0, step.advance(FixedStep.STEP * 0.5f));
-    }
-
-    @Test
-    void aPressIsKeptUntilAStepUsesIt() {
-        PlayerInput live = new PlayerInput(), sim = new PlayerInput();
-        live.a = true;
-        live.aPressed = true;
-        sim.latch(live);                 // frame 1: pressed, but no step ran this frame
-        live.aPressed = false;           // frame 2: still held, no longer "just pressed"
-        sim.latch(live);
-        assertTrue(sim.aPressed, "the press waits for the step");
-        assertTrue(sim.a);
-        sim.clearPresses();              // a step used it
-        sim.latch(live);
-        assertFalse(sim.aPressed, "and it fires only once");
-        assertTrue(sim.a, "held stays held");
-    }
-
-    @Test
-    void heldButtonsAndMovementFollowTheLiveInput() {
-        PlayerInput live = new PlayerInput(), sim = new PlayerInput();
-        live.moveX = 0.7f;
-        live.b = true;
-        sim.latch(live);
-        live.moveX = 0f;
-        live.b = false;
-        sim.latch(live);
-        assertEquals(0f, sim.moveX);
-        assertFalse(sim.b, "letting go is seen right away");
     }
 }
