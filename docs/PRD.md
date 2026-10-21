@@ -451,8 +451,8 @@ The goal is a phone game (Android first, iPhone later) played over the network: 
 | --- | --- | --- |
 | 1 | Fixed 60 Hz simulation (`FixedStep`). The match runs in 1/60 s steps whatever the frame rate. The match reads its own `PlayerInput` copies (`latch`): held buttons follow the live input, and a press is kept until a step uses it, so it is never lost or doubled | Done |
 | 2 | Split the art out of `Player`, `Can` and `Slipper` into `PlayerView` and `CanView`, so the rules can run with no screen (on the host). The views draw between the last two match steps, so movement is smooth on 90 and 120 Hz screens; a jump of more than 64 px in one step (a respawn) is drawn straight away. Adding art is unchanged: PNGs in `assets/`, loaded by `GameScreen` and handed to the views | Done |
-| 3 | Move the match flow (dialogue → mano → can spot → intro → play → outro) out of `GameScreen` into a class with no graphics | Next |
-| 4 | Input as per-step "held" frames from any source (touch, keyboard, network), with presses worked out inside the simulation | |
+| 3 | `MatchFlow` runs the whole match with no graphics: dialogue → mano → can spot → GAME START → play → GOOD JOB, the hit-stop freezes, and waits as long as the matching sign. The dialogue logic is `Dialogue` (`DialogueBox` only draws it). `GameScreen` runs the flow in fixed steps and draws, plays sounds and shows signs when the flow tells it to | Done |
+| 4 | Input as per-step "held" frames from any source (touch, keyboard, network), with presses worked out inside the simulation | Next |
 | 5 | A lobby model of player slots (name, character, ready, where the input comes from), which becomes the waiting room | |
 | 6 | A viewport that fits any phone screen shape (no window resizing) | |
 

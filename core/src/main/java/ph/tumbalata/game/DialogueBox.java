@@ -13,12 +13,12 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Align;
-import com.badlogic.gdx.utils.Array;
 
 /**
- * Pokémon-style dialogue box for the intro: the speaker's portrait stands above the box, a name plate in their
- * colour, the text types itself out with little voice blips, and a blinking arrow when the line is done.
- * A / Enter: finish the line or go to the next one. Hold B: skip the whole dialogue.
+ * Draws the intro {@link Dialogue} Pokémon-style: the speaker's portrait stands above the box, a name plate in their
+ * colour, the text typing itself out with little voice blips, and a blinking arrow when the line is done. When one
+ * kid talks the box covers their half of the screen; it slides over when the other side talks and the new speaker
+ * rises up from behind it (timed by {@link Dialogue}).
  *
  * <p>Portraits: assets/portraits/fast.png, strong.png, sniper.png, sneaky.png (by character). The shirt (near-white
  * pixels in the lower part of the picture) is drawn in the player's colour. Box art (optional):
@@ -30,9 +30,7 @@ public final class DialogueBox {
     private static final String BOX_ART = "dialogue/box.png";
     private static final int BOX_ART_CORNER = 8;
 
-    private static final float CHARS_PER_SECOND = 40f;
-    private static final float SKIP_HOLD_SECONDS = 0.8f;
-    private static final float BLIP_EVERY_CHARS = 2f;
+    private static final int BLIP_EVERY_CHARS = 2;
     /** Voice pitch per character (FAST, STRONG, SNIPER, SNEAKY). */
     private static final float[] VOICE_PITCH = { 1.15f, 0.82f, 1.0f, 1.28f };
 
@@ -46,11 +44,8 @@ public final class DialogueBox {
     private static final float GROUP_SCALE = 0.8f;      // portraits when everyone talks at once
     private static final float TEXT_SCALE = 2.0f;
     private static final float PAD = 28f;
-    private static final float HALF = 0.5f;             // box width (share of the full width) when one kid talks
-    private static final float SLIDE_SPEED = 12f;       // how fast the box slides to the speaker's side
-    private static final float RISE_SECONDS = 0.22f;    // a new speaker rises up from behind the box
 
-    private final Array<DialogueScript.Line> lines;
+    private final Dialogue dialogue;
     private final int[] characters;
     private final String[] names;
     private final Audio audio;
@@ -60,26 +55,15 @@ public final class DialogueBox {
     private final NinePatch boxPatch;
     private final GlyphLayout layout = new GlyphLayout();
 
-    private int index = 0;
-    private float shown = 0f;     // characters of the current line revealed so far
-    private float blipAt = 0f;    // next character count to blip at
-    private float skipHeld = 0f;
-    private float time = 0f;
-    private float boxLeft, boxRight; // box edges as a share of the full width (0 = far left, 1 = far right)
-    private float rise = 0f;          // 0..1, the current speaker rising into view
-    private boolean finished;
+    private int blipLine = -1;  // the line the blips below belong to
+    private int blipAt = 1;     // next character count to blip at
 
     /** @param characters picked character per player; @param names the players' names */
-    public DialogueBox(Array<DialogueScript.Line> lines, int[] characters, String[] names, Audio audio) {
-        this.lines = lines;
+    public DialogueBox(Dialogue dialogue, int[] characters, String[] names, Audio audio) {
+        this.dialogue = dialogue;
         this.characters = characters;
         this.names = names;
         this.audio = audio;
-        this.finished = lines.size == 0;
-        if (lines.size > 0) {
-            boxLeft = targetLeft(lines.first());
-            boxRight = targetRight(lines.first());
-        }
         for (int c = 0; c < Characters.COUNT; c++) {
             if (!Gdx.files.internal(PORTRAITS[c]).exists()) continue;
             Texture[] split = splitShirt(PORTRAITS[c]);
@@ -96,59 +80,43 @@ public final class DialogueBox {
         }
     }
 
-    public boolean isFinished() {
-        return finished;
-    }
-
-    /**
-     * @param next     A / Enter pressed this frame
-     * @param skipDown B held this frame (held long enough = skip everything)
-     */
-    public void update(float delta, boolean next, boolean skipDown) {
-        if (finished) return;
-        time += delta;
-        skipHeld = skipDown ? skipHeld + delta : 0f;
-        if (skipHeld >= SKIP_HOLD_SECONDS) {
-            finished = true;
+    /** Once a frame: a little voice blip every couple of letters while the text types. */
+    public void update() {
+        DialogueScript.Line line = dialogue.line();
+        if (line == null) return;
+        if (dialogue.index() != blipLine) {
+            blipLine = dialogue.index();
+            blipAt = 1; // the first blip with the first letter
+        }
+        if (dialogue.isLineDone()) { // finished (or skipped to the end): no more blips for this line
+            blipAt = Integer.MAX_VALUE;
             return;
         }
-        DialogueScript.Line line = lines.get(index);
-        float slide = Math.min(1f, delta * SLIDE_SPEED); // box slides to the speaker's side, then they rise
-        boxLeft += (targetLeft(line) - boxLeft) * slide;
-        boxRight += (targetRight(line) - boxRight) * slide;
-        if (Math.abs(targetLeft(line) - boxLeft) + Math.abs(targetRight(line) - boxRight) < 0.03f)
-            rise = Math.min(1f, rise + delta / RISE_SECONDS);
-        int length = line.text.length();
-        if (shown < length && rise >= 1f) { // starts typing once the speaker is up
-            shown = Math.min(length, shown + delta * CHARS_PER_SECOND);
-            if (shown >= blipAt && audio != null) { // a little voice blip while the text types
-                blipAt += BLIP_EVERY_CHARS;
-                float pitch = line.speaker >= 0 ? VOICE_PITCH[characters[line.speaker]] : 1f;
-                audio.play(Audio.Sfx.DIALOGUE_BLIP, pitch * MathUtils.random(0.96f, 1.04f));
-            }
-        }
-        if (next) {
-            if (shown < length) {
-                shown = length; // first press finishes the line
-            } else if (++index >= lines.size) {
-                finished = true;
-            } else {
-                shown = 0f;
-                blipAt = 0f;
-                if (lines.get(index).speaker != line.speaker) rise = 0f; // a new speaker: slide over and rise again
-            }
+        if (dialogue.shownChars() >= blipAt && audio != null) {
+            blipAt = dialogue.shownChars() + BLIP_EVERY_CHARS;
+            float pitch = line.speaker >= 0 ? VOICE_PITCH[characters[line.speaker]] : 1f;
+            audio.play(Audio.Sfx.DIALOGUE_BLIP, pitch * MathUtils.random(0.96f, 1.04f));
         }
     }
 
     /** Draws the portrait(s), the box, the name plate, the text and the hints. Call outside any batch / shape block. */
     public void draw(SpriteBatch batch, ShapeRenderer shapes, BitmapFont font, ControlHints hints,
                      float viewX, float viewY, float viewW, float alpha) {
-        if (finished || lines.size == 0) return;
-        DialogueScript.Line line = lines.get(index);
+        DialogueScript.Line line = dialogue.line();
+        if (line == null) return;
+        // The box slides from the last line's side to this one's
+        DialogueScript.Line before = dialogue.previousLine();
+        float slide = Interpolation.pow3Out.apply(dialogue.slideProgress());
+        float leftEdge = Dialogue.boxLeft(line), rightEdge = Dialogue.boxRight(line);
+        if (before != null) {
+            leftEdge = MathUtils.lerp(Dialogue.boxLeft(before), leftEdge, slide);
+            rightEdge = MathUtils.lerp(Dialogue.boxRight(before), rightEdge, slide);
+        }
         float span = viewW - 2f * BOX_MARGIN;
-        float boxX = viewX + BOX_MARGIN + span * boxLeft, boxY = viewY + BOX_BOTTOM, boxW = span * (boxRight - boxLeft);
+        float boxX = viewX + BOX_MARGIN + span * leftEdge, boxY = viewY + BOX_BOTTOM, boxW = span * (rightEdge - leftEdge);
         float boxTop = boxY + BOX_H;
-        boolean left = isLeft(line.speaker);
+        boolean left = Dialogue.isLeft(line.speaker);
+        float rise = dialogue.riseProgress();
         float up = Interpolation.swingOut.apply(rise);             // rising from behind the box
         float portraitAlpha = alpha * Math.min(1f, rise * 2f);
         float sink = PORTRAIT_SINK + (1f - up) * 120f;
@@ -195,9 +163,9 @@ public final class DialogueBox {
         shapes.rect(plateX - 3f, plateY - 3f, plateW + 6f, plateH + 6f);
         shapes.setColor(plateColor.r, plateColor.g, plateColor.b, alpha);
         shapes.rect(plateX, plateY, plateW, plateH);
-        if (skipHeld > 0f) {                                                      // skip progress along the bottom
+        if (dialogue.skipProgress() > 0f) {                                       // skip progress along the bottom
             shapes.setColor(0.92f, 0.22f, 0.2f, alpha);
-            shapes.rect(boxX, boxY - 12f, boxW * Math.min(1f, skipHeld / SKIP_HOLD_SECONDS), 6f);
+            shapes.rect(boxX, boxY - 12f, boxW * dialogue.skipProgress(), 6f);
         }
         shapes.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
@@ -214,9 +182,9 @@ public final class DialogueBox {
 
         font.getData().setScale(TEXT_SCALE);
         font.setColor(1f, 1f, 1f, alpha);
-        String typed = line.text.substring(0, (int) shown);
+        String typed = line.text.substring(0, dialogue.shownChars());
         font.draw(batch, typed, boxX + PAD, boxTop - PAD, boxW - 2f * PAD, Align.left, true);
-        if (shown >= line.text.length() && ((int) (time * 2.5f)) % 2 == 0) { // blinking "next" arrow
+        if (dialogue.isLineDone() && ((int) (dialogue.time() * 2.5f)) % 2 == 0) { // blinking "next" arrow
             font.setColor(Color.GOLD.r, Color.GOLD.g, Color.GOLD.b, alpha);
             font.getData().setScale(2.2f);
             font.draw(batch, "v", boxX + boxW - PAD - 20f, boxY + PAD + 22f);
@@ -230,19 +198,6 @@ public final class DialogueBox {
             hints.draw(batch, shapes, font, boxX + 190f, boxY + 26f, 1.1f, // inside the box, bottom left
                 ControlHints.Icon.A, "NEXT", ControlHints.Icon.B, "HOLD TO SKIP");
         }
-    }
-
-    /** P1 / P3 talk from the left, P2 / P4 from the right. */
-    private static boolean isLeft(int speaker) {
-        return speaker % 2 == 0;
-    }
-
-    private static float targetLeft(DialogueScript.Line line) {
-        return line.speaker < 0 || isLeft(line.speaker) ? 0f : 1f - HALF;
-    }
-
-    private static float targetRight(DialogueScript.Line line) {
-        return line.speaker < 0 || !isLeft(line.speaker) ? 1f : HALF;
     }
 
     private float portraitWidth(int player, float scale) {

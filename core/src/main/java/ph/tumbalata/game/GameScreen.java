@@ -29,8 +29,9 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 import java.util.Comparator;
 
 /**
- * Draws a match. All the rules (roles, round flow, tagging, scoring, timer) live in {@link Match};
- * this screen loads the assets, feeds the match one frame at a time and draws what it reports.
+ * Draws a match. The rules live elsewhere: {@link MatchFlow} runs it from the intro dialogue to GOOD JOB, and
+ * {@link Match} has the play itself (roles, tagging, scoring, timer). This screen loads the assets, runs the flow in
+ * fixed steps with the players' input, and draws, plays sounds and shows signs for what happens.
  */
 public class GameScreen implements Screen {
     private static final float VIEW_X = 0f;
@@ -66,12 +67,10 @@ public class GameScreen implements Screen {
     private static final float POPUP_TIME = 1.0f;
     private static final float POPUP_RISE = 40f;
 
-    // --- HIT-STOP, SHAKE AND BLUR (feel only; see CourtEffects / BlurRenderer) ---
-    private static final float KNOCK_FREEZE = 0.07f;       // seconds the action freezes when the can is knocked
+    // --- SHAKE AND BLUR (feel only; see CourtEffects / BlurRenderer; the hit-stop is in MatchFlow) ---
     private static final float KNOCK_SHAKE_MIN = 3f;       // px, weakest knock
     private static final float KNOCK_SHAKE_MAX = 9f;       // px, full-power knock
     private static final float KNOCK_SHAKE_TIME = 0.35f;
-    private static final float CATCH_FREEZE = 0.05f;       // a tag, or Taya's can landing on a slipper
     private static final float CATCH_SHAKE = 4f;
     private static final float CATCH_SHAKE_TIME = 0.25f;
     private static final float SIGN_BLUR_RADIUS = 9f;      // px of blur behind a pop-up sign (0 = off)
@@ -145,15 +144,12 @@ public class GameScreen implements Screen {
     private static final float ARROW_DEFAULT_TAIL_X = 6f, ARROW_DEFAULT_TAIL_Y = 6f;
     private static final float ARROW_SNIPER_TAIL_X = 0f, ARROW_SNIPER_TAIL_Y = 0f;
 
-    /** INTRO: waiting for the transition + "GAME START!" sign. OUTRO: "GOOD JOB!" before the victory screen. */
-    private enum Stage { DIALOGUE, MANO, MANO_RESULT, CAN_SPOT, INTRO, PLAYING, OUTRO, DONE }
-    private Stage stage = Stage.DIALOGUE;
-    private DialogueBox dialogue;    // the kids calling each other to play (assets/dialogue/intro.txt), then the mano
+    private MatchFlow flow;          // the match from the dialogue to GOOD JOB (the rules; this screen draws it)
+    private DialogueBox dialogueBox; // the kids calling each other to play (assets/dialogue/intro.txt), then the mano
     private float dialogueFade = 0f; // 0..1, the dialogue box and the blur behind it
     private ControlHints hints;
-    private Mano mano;           // picks the first Taya before GAME START (MANO -> "NAME IS TAYA!" -> INTRO)
+    private Mano mano;           // the flow's mano: picks the first Taya before GAME START
     private float manoFade = 0f; // 0..1, the mano widget and the blur behind it
-    private boolean introSignShown = false;
     private PauseMenu pauseMenu;
     private boolean paused = false;
     private boolean pauseJustOpened = false; // the button that opened it must not also press a menu button
@@ -250,10 +246,7 @@ public class GameScreen implements Screen {
         audio.playMusic(Audio.Track.GAME);
         audio.playBackgroundMusic(Audio.Track.MENU); // the menu song, quietly underneath the game music
         signs = new Signs(audio);
-        mano = new Mano(players.size, new java.util.Random());
         hints = new ControlHints();
-        dialogue = loadIntroDialogue();
-        if (dialogue.isFinished()) stage = Stage.MANO; // no script for this many players: straight to the mano
         if (Gdx.files.internal("mano/back.png").exists()) manoBack = loadPixelTexture("mano/back.png");
         if (Gdx.files.internal("mano/select.png").exists()) manoSelect = loadPixelTexture("mano/select.png");
         if (Gdx.files.internal("mano/hand_fist.png").exists()) handFist = loadPixelTexture("mano/hand_fist.png");
@@ -289,7 +282,47 @@ public class GameScreen implements Screen {
         match.setCourt(CourtLine.fromMap(map, Match.THROW_LINE_X)); // the court line and throw area drawn in Tiled
         match.setCharacterTraits(true);
         match.setStreetEvents(game.settings().streetEvents());
-        match.setEvents(new Match.Events() {
+
+        Dialogue dialogue = new Dialogue(loadIntroLines());
+        dialogueBox = new DialogueBox(dialogue, characters, names, audio);
+        mano = new Mano(players.size, new java.util.Random());
+        flow = new MatchFlow(match, mano, dialogue);
+        flow.setListener(new MatchFlow.Listener() {
+            @Override
+            public void stageStarted(MatchFlow.Stage stage) {
+                switch (stage) {
+                    case MANO_RESULT:
+                        Player taya = match.taya();
+                        signs.show(Signs.Sign.TAYA_PICKED, taya.label() + " IS TAYA!", taya.color());
+                        break;
+                    case CAN_SPOT:
+                        signs.show(Signs.Sign.CHOOSE_SPOT);
+                        break;
+                    case OUTRO:
+                        signs.show(Signs.Sign.GOOD_JOB);
+                        audio.stopMusic();
+                        break;
+                    case DONE:
+                        endMatch();
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            @Override
+            public void manoChanged(Mano.Phase phase) {
+                if (phase != Mano.Phase.REVEAL) return;
+                audio.playVaried(Audio.Sfx.THROW);
+                audio.play(mano.isAgain() ? Audio.Sfx.UI_DENY : Audio.Sfx.TAG);
+            }
+
+            @Override
+            public void gameStartShown() {
+                signs.show(Signs.Sign.GAME_START);
+            }
+        });
+        flow.setMatchEvents(new Match.Events() {
             @Override
             public void scored(Player player, int points) {
                 Popup popup = new Popup();
@@ -314,7 +347,6 @@ public class GameScreen implements Screen {
                 audio.playVaried(Audio.Sfx.CAN_HIT);
                 // Harder hits shake harder (the can flies off at ~0.85x the slipper's speed)
                 float strength = MathUtils.clamp(match.can().velocity.len() / 1300f, 0f, 1f);
-                effects.hitStop(KNOCK_FREEZE);
                 effects.shake(MathUtils.lerp(KNOCK_SHAKE_MIN, KNOCK_SHAKE_MAX, strength), KNOCK_SHAKE_TIME);
                 // Someone is out past the line: they have to run. Everyone is safe behind it: laugh at Taya.
                 // Someone past the line: RUN! First knock this round with everyone safe: HAHA!. Another knock in the same
@@ -339,7 +371,6 @@ public class GameScreen implements Screen {
             public void tossHitSlipper(Player taya, Player victim) {
                 audio.playVaried(Audio.Sfx.CAN_HIT);
                 signs.show(Signs.Sign.GOTCHA);
-                effects.hitStop(CATCH_FREEZE);
                 effects.shake(CATCH_SHAKE, CATCH_SHAKE_TIME);
             }
 
@@ -347,7 +378,6 @@ public class GameScreen implements Screen {
             public void tagged(Player taya, Player victim) {
                 audio.play(Audio.Sfx.TAG);
                 signs.show(Signs.Sign.TAGGED);
-                effects.hitStop(CATCH_FREEZE);
                 effects.shake(CATCH_SHAKE, CATCH_SHAKE_TIME);
             }
 
@@ -361,7 +391,6 @@ public class GameScreen implements Screen {
             public void canSpotChosen(Vector2 spot) {
                 audio.play(Audio.Sfx.UI_CONFIRM);
                 effects.burst(spot.x, spot.y, 6, 40f);
-                stage = Stage.INTRO; // GAME START
             }
 
             @Override
@@ -415,93 +444,38 @@ public class GameScreen implements Screen {
             simInputs[id].latch(liveInputs.player(id));
             if (pausedThisFrame) simInputs[id].clearPresses(); // the pause menu used them (A on RESUME is not a throw)
         }
-        int steps = -1; // match steps run this frame (-1: not a stage where the match runs)
+        MatchFlow.Stage stage = flow.stage();
         pauseFade = paused ? Math.min(1f, pauseFade + delta / PAUSE_FADE_SECONDS)
             : Math.max(0f, pauseFade - delta / PAUSE_FADE_SECONDS);
-        dialogueFade = stage == Stage.DIALOGUE ? Math.min(1f, dialogueFade + delta / PAUSE_FADE_SECONDS)
+        dialogueFade = stage == MatchFlow.Stage.DIALOGUE ? Math.min(1f, dialogueFade + delta / PAUSE_FADE_SECONDS)
             : Math.max(0f, dialogueFade - delta / PAUSE_FADE_SECONDS);
-        manoFade = stage == Stage.MANO ? Math.min(1f, manoFade + delta / PAUSE_FADE_SECONDS)
+        manoFade = stage == MatchFlow.Stage.MANO ? Math.min(1f, manoFade + delta / PAUSE_FADE_SECONDS)
             : Math.max(0f, manoFade - delta / PAUSE_FADE_SECONDS);
 
-        if (!paused) { // paused: the whole match holds still (timer, players, signs, effects)
+        if (paused) {
+            fixedStep.reset(); // paused: the whole match holds still (timer, players, signs, effects)
+            for (PlayerView v : views) v.snap();
+            canView.snap();
+        } else {
             clock += delta;
             signs.update(delta);
-            boolean frozen = effects.tickFreeze(delta); // hit-stop: the action holds still for a moment
             // How long the screen has been free of signs (and not frozen): the turn sign waits for a short gap
-            signFreeTime = (signs.isShowing() || frozen) ? 0f : signFreeTime + delta;
-            switch (stage) {
-                case DIALOGUE:
-                    if (game.isTransitioning()) break;
-                    dialogue.update(delta, game.input().menu().confirm, anyoneHolds());
-                    if (dialogue.isFinished()) stage = Stage.MANO;
-                    break;
-                case MANO:
-                    if (!game.isTransitioning()) updateMano(delta);
-                    break;
-                case MANO_RESULT:
-                    if (signs.isShowing()) break; // "NAME IS TAYA!" first
-                    if (match.court().hasCanZone()) { // Taya chooses where the can stands for this match
-                        match.beginCanPlacement();
-                        signs.show(Signs.Sign.CHOOSE_SPOT);
-                        stage = Stage.CAN_SPOT;
-                    } else {
-                        stage = Stage.INTRO;
-                    }
-                    break;
-                case CAN_SPOT:
-                    steps = runMatch(delta, false); // only Taya moves; canSpotChosen() moves on to GAME START
-                    break;
-                case INTRO:
-                    // Wait for the screen transition, then "GAME START!"; the match starts when the sign is gone
-                    if (!introSignShown && !game.isTransitioning()) {
-                        introSignShown = true;
-                        signs.show(Signs.Sign.GAME_START);
-                    } else if (introSignShown && !signs.isShowing()) {
-                        stage = Stage.PLAYING;
-                    }
-                    break;
-                case PLAYING:
-                    if (frozen) {
-                        steps = 0; // hit-stop: presses wait for the action to start again
-                        break;
-                    }
-                    steps = runMatch(delta, true);
-                    showTurnSignWhenFree();
-                    if (match.isOver()) {
-                        stage = Stage.OUTRO;
-                        signs.show(Signs.Sign.GOOD_JOB);
-                        audio.stopMusic();
-                    }
-                    break;
-                case OUTRO:
-                    if (!signs.isShowing()) {
-                        stage = Stage.DONE;
-                        endMatch();
-                    }
-                    break;
-                case DONE:
-                    break;
-            }
-            if (!frozen) effects.update(delta);
+            signFreeTime = (signs.isShowing() || flow.isFrozen()) ? 0f : signFreeTime + delta;
+            if (pausedThisFrame) fixedStep.reset(); // just resumed: no catching up on the paused time
+            stepFlow(fixedStep.advance(delta));
+            if (flow.stage() == MatchFlow.Stage.PLAYING) showTurnSignWhenFree();
+            if (flow.stage() == MatchFlow.Stage.DIALOGUE) dialogueBox.update(); // voice blips
+            if (flow.stage() == MatchFlow.Stage.MANO) manoTickSound();
+            if (!flow.isFrozen()) effects.update(delta);
             for (int i = popups.size - 1; i >= 0; i--) {
                 popups.get(i).age += delta;
                 if (popups.get(i).age >= POPUP_TIME) popups.removeIndex(i);
             }
+            // Where to draw things: between the last two steps
+            float alpha = fixedStep.alpha();
+            for (PlayerView v : views) v.follow(alpha);
+            canView.follow(alpha);
         }
-        // Presses not waiting for a match step are used up now (the mano, the dialogue and the pause menu read them
-        // this frame), so they can't fire again later
-        if (steps != 0) {
-            for (PlayerInput in : simInputs) in.clearPresses();
-        }
-        // Where to draw things: between the last two match steps while it runs, else exactly where they are
-        float alpha = fixedStep.alpha();
-        for (PlayerView v : views) {
-            if (steps < 0) v.snap();
-            else v.follow(alpha);
-        }
-        if (steps < 0) canView.snap();
-        else canView.follow(alpha);
-        if (steps < 0 || pausedThisFrame) fixedStep.reset(); // no catching up on time the match was stopped
 
         ScreenUtils.clear(0f, 0f, 0f, 1f);
 
@@ -534,7 +508,7 @@ public class GameScreen implements Screen {
         }
 
         if (manoFade > 0f) drawMano(manoFade);
-        if (dialogueFade > 0f) dialogue.draw(spriteBatch, shapeRenderer, font, hints, VIEW_X, VIEW_Y, VIEW_W, dialogueFade);
+        if (dialogueFade > 0f) dialogueBox.draw(spriteBatch, shapeRenderer, font, hints, VIEW_X, VIEW_Y, VIEW_W, dialogueFade);
         if (pauseFade > 0f) pauseMenu.draw(shapeRenderer, spriteBatch, font, pauseLabels(), pauseFade);
     }
 
@@ -828,67 +802,39 @@ public class GameScreen implements Screen {
     }
 
     /** The intro dialogue for this many players (a random variant), with the players' names filled in. */
-    private DialogueBox loadIntroDialogue() {
-        Array<DialogueScript.Line> lines = new Array<>();
-        if (Gdx.files.internal("dialogue/intro.txt").exists()) {
-            DialogueScript script = DialogueScript.parse(Gdx.files.internal("dialogue/intro.txt").readString("UTF-8"));
-            if (script.problems() > 0) Gdx.app.error("Dialogue", script.problems() + " line(s) in dialogue/intro.txt could not be read");
-            lines = script.pick(characters.length, names, new java.util.Random());
-        }
-        return new DialogueBox(lines, characters, names, audio);
+    private Array<DialogueScript.Line> loadIntroLines() {
+        if (!Gdx.files.internal("dialogue/intro.txt").exists()) return new Array<>();
+        DialogueScript script = DialogueScript.parse(Gdx.files.internal("dialogue/intro.txt").readString("UTF-8"));
+        if (script.problems() > 0) Gdx.app.error("Dialogue", script.problems() + " line(s) in dialogue/intro.txt could not be read");
+        return script.pick(characters.length, names, new java.util.Random());
     }
 
     /**
-     * Runs the match in fixed steps for the time that passed (see {@link FixedStep}): 0, 1 or a few steps this frame.
-     * Each step uses up the presses. {@code dust}: footsteps and slipper trails (not while Taya picks the can spot).
-     * Returns how many steps ran.
+     * Runs the match flow {@code steps} fixed steps (see {@link FixedStep}). Each step uses up the presses, except
+     * during a hit-stop: those wait for the action to start again. Players animate only while the match moves them.
      */
-    private int runMatch(float delta, boolean dust) {
-        int steps = fixedStep.advance(delta);
-        for (int i = 0; i < steps && !match.isOver(); i++) {
+    private void stepFlow(int steps) {
+        for (int i = 0; i < steps && flow.stage() != MatchFlow.Stage.DONE; i++) {
+            MatchFlow.Stage stage = flow.stage();
+            boolean frozen = flow.isFrozen();
+            boolean moving = !frozen && (stage == MatchFlow.Stage.CAN_SPOT || stage == MatchFlow.Stage.PLAYING);
             for (PlayerView v : views) v.beforeStep();
             canView.beforeStep();
-            match.update(FixedStep.STEP);
-            for (PlayerView v : views) v.afterStep(FixedStep.STEP);
-            canView.afterStep(FixedStep.STEP);
-            if (dust) effects.track(match, FixedStep.STEP);
-            for (PlayerInput in : simInputs) in.clearPresses();
+            flow.step(FixedStep.STEP, !game.isTransitioning());
+            if (moving) {
+                for (PlayerView v : views) v.afterStep(FixedStep.STEP);
+                canView.afterStep(FixedStep.STEP);
+            }
+            if (moving && stage == MatchFlow.Stage.PLAYING) effects.track(match, FixedStep.STEP); // dust, trails
+            if (!frozen) for (PlayerInput in : simInputs) in.clearPresses();
         }
-        return steps;
     }
 
-    /** True while anyone holds B (skips the dialogue when held long enough). */
-    private boolean anyoneHolds() {
-        for (int i = 0; i < match.players().size; i++) if (match.players().get(i).input.b) return true;
-        return false;
-    }
-
-    /** Before the mano has picked the Taya: nobody is shown as Taya yet. */
-    private boolean beforeTaya() {
-        return stage == Stage.DIALOGUE || stage == Stage.MANO;
-    }
-
-    private void updateMano(float delta) {
-        for (int i = 0; i < match.players().size; i++) {
-            PlayerInput in = match.players().get(i).input;
-            if (in.aPressed) mano.choose(i, true);   // A = palm up
-            if (in.bPressed) mano.choose(i, false);  // B = palm down (also the default)
-        }
-        Mano.Phase happened = mano.update(delta);
-
+    /** A tick each second of the mano countdown. */
+    private void manoTickSound() {
         int tick = MathUtils.ceil(mano.secondsLeft());
         if (mano.phase() == Mano.Phase.CHOOSING && tick != manoLastTick && tick > 0) audio.play(Audio.Sfx.UI_MOVE);
         manoLastTick = tick;
-
-        if (happened == Mano.Phase.REVEAL) {
-            audio.playVaried(Audio.Sfx.THROW);
-            audio.play(mano.isAgain() ? Audio.Sfx.UI_DENY : Audio.Sfx.TAG);
-        } else if (happened == Mano.Phase.DONE) {
-            Player taya = match.players().get(mano.taya());
-            match.chooseFirstTaya(taya.id);
-            signs.show(Signs.Sign.TAYA_PICKED, taya.label() + " IS TAYA!", taya.color());
-            stage = Stage.MANO_RESULT;
-        }
     }
 
     /** The ring of hands, the countdown and the result. HUD layer (the court is blurred behind it). */
@@ -1038,7 +984,7 @@ public class GameScreen implements Screen {
 
     /** Opens the pause menu on Select / Start / Esc / P, and handles its buttons while it is open. */
     private void handlePause() {
-        if (exiting || game.isTransitioning() || stage == Stage.OUTRO || stage == Stage.DONE) return;
+        if (exiting || game.isTransitioning() || flow.stage() == MatchFlow.Stage.OUTRO || flow.stage() == MatchFlow.Stage.DONE) return;
 
         if (!paused) {
             if (pausePressed()) {
@@ -1152,7 +1098,7 @@ public class GameScreen implements Screen {
         Player taya = match.taya();
         font.getData().setScale(1f);
         for (Player p : match.players()) {
-            String text = (p == taya && !beforeTaya()) ? p.label() + " TAYA" : p.label();
+            String text = (p == taya && !flow.beforeTaya()) ? p.label() + " TAYA" : p.label();
             Color c = p.color();
             float a = (p != taya && p.hasThrown) ? 0.7f : 1f;
             // the player's colour with a dark stroke, readable on any part of the court
@@ -1203,7 +1149,7 @@ public class GameScreen implements Screen {
 
     /** Red (B) and yellow (A) circles over whoever can press them right now. Draws its own shape pass. */
     private void drawButtonPrompts() {
-        if (stage != Stage.PLAYING && stage != Stage.CAN_SPOT) return; // not behind the mano or the signs before play
+        if (flow.stage() != MatchFlow.Stage.PLAYING && flow.stage() != MatchFlow.Stage.CAN_SPOT) return; // not behind the mano or the signs before play
         Player taya = match.taya();
         boolean art = buttonA != null && buttonB != null; // the button art, else drawn circles
         if (art) {
@@ -1287,14 +1233,14 @@ public class GameScreen implements Screen {
         font.getData().setScale(1.2f);
         font.setColor(Color.WHITE);
 
-        if (!beforeTaya()) {
+        if (!flow.beforeTaya()) {
             font.draw(spriteBatch, statusText(), VIEW_X + VIEW_W / 2f - 300f, VIEW_Y + VIEW_H - 54f, 600f, Align.center, false);
         }
 
         font.getData().setScale(1.5f);
         float y = VIEW_Y + VIEW_H - 16f;
         for (Player p : match.players()) {
-            String role = (p == match.taya() && !beforeTaya()) ? " (Taya)" : ""; // no Taya until the mano picks one
+            String role = (p == match.taya() && !flow.beforeTaya()) ? " (Taya)" : ""; // no Taya until the mano picks one
             String line = p.label() + " " + Characters.TRAITS[p.characterIndex] + role + "  " + p.score;
             font.setColor(0f, 0f, 0f, 0.85f); // drop shadow, so it reads on the busy background
             font.draw(spriteBatch, line, VIEW_X + 22f, y - 2f);
@@ -1487,7 +1433,7 @@ public class GameScreen implements Screen {
         if (canSheet != null) canSheet.dispose();
         if (signs != null) signs.dispose();
         for (Texture t : new Texture[] { handFist, handUp, handDown, manoBack, manoSelect }) if (t != null) t.dispose();
-        if (dialogue != null) dialogue.dispose();
+        if (dialogueBox != null) dialogueBox.dispose();
         if (hints != null) hints.dispose();
         if (audio != null) audio.playBackgroundMusic(null);
         if (effects != null) effects.dispose();

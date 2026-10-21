@@ -9,8 +9,8 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 
 /**
- * "Juice" for the match screen: hit-stop (a tiny freeze), screen shake and dust puffs. Visual only: the rules in
- * {@link Match} never read anything from here.
+ * "Juice" for the match screen: screen shake and dust puffs (the hit-stop freeze is in {@link MatchFlow}). Visual
+ * only: the rules in {@link Match} never read anything from here.
  *
  * <p>Dust uses a fixed pool, so nothing is allocated while playing. Art: {@code assets/effects/dust.png} (optional,
  * drawn tinted and scaled); until it exists each puff is a soft circle.
@@ -41,8 +41,7 @@ public final class CourtEffects {
     private final float[] trailDistance = new float[InputManager.MAX_PLAYERS];
     private float canTrailDistance = 0f;
 
-    // --- HIT-STOP AND SHAKE ---
-    private float freezeLeft = 0f;
+    // --- SHAKE (the hit-stop is in MatchFlow) ---
     private float shakeTime = 0f, shakeDuration = 0f, shakeStrength = 0f;
     private float shakeX = 0f, shakeY = 0f;
 
@@ -63,13 +62,8 @@ public final class CourtEffects {
     }
 
     // ------------------------------------------------------------------
-    // Hit-stop and shake
+    // Shake
     // ------------------------------------------------------------------
-
-    /** Freezes the action for {@code seconds} (keeps the longer freeze if one is already running). */
-    public void hitStop(float seconds) {
-        freezeLeft = Math.max(freezeLeft, seconds);
-    }
 
     /** Shakes the camera by up to {@code strength} px, fading out over {@code seconds}. A weaker shake never cuts a
      * stronger one short. */
@@ -84,16 +78,6 @@ public final class CourtEffects {
         if (shakeTime >= shakeDuration) return 0f;
         float t = 1f - shakeTime / shakeDuration;
         return shakeStrength * t * t;
-    }
-
-    /**
-     * Counts down the hit-stop. Call first each frame.
-     * @return true while frozen: skip the match update and {@link #update} this frame
-     */
-    public boolean tickFreeze(float delta) {
-        if (freezeLeft <= 0f) return false;
-        freezeLeft -= delta;
-        return true;
     }
 
     public float shakeX() { return shakeX; }
