@@ -1,15 +1,11 @@
 package ph.tumbalata.game;
 
-import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
 
 public class Slipper {
     public Vector2 position;
     public Vector2 velocity;
     public float radius = 8f;
-    /** Fill colour; tinted per owner so each player can spot their own slipper. */
-    public final Color color = new Color(Color.BROWN);
 
     public Slipper(float x, float y) {
         this.position = new Vector2(x, y);
@@ -51,11 +47,6 @@ public class Slipper {
                 velocity.y = -velocity.y * GameConstants.BOUNCE_DAMPING; 
             }
         }
-    }
-
-    public void render(ShapeRenderer shapeRenderer) {
-        shapeRenderer.setColor(color);
-        shapeRenderer.ellipse(position.x - radius, position.y - 4, radius * 2, 8);
     }
 
     public void reset(float x, float y) {

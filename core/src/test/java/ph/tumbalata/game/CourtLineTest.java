@@ -42,7 +42,7 @@ class CourtLineTest {
             Array<Player> players = new Array<>();
             for (int id = 0; id < count; id++) {
                 Player p = new Player(id, 0, 0f, 0f, GameConstants.PLAYER_SPEED, new PlayerInput(),
-                    Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y, null, null, null);
+                    Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y);
                 p.slipper = new Slipper(0f, 0f);
                 players.add(p);
             }
@@ -66,7 +66,7 @@ class CourtLineTest {
         Array<Player> players = new Array<>();
         for (int id = 0; id < count; id++) {
             Player p = new Player(id, 0, 0f, 0f, GameConstants.PLAYER_SPEED, new PlayerInput(),
-                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y, null, null, null);
+                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y);
             p.slipper = new Slipper(0f, 0f);
             players.add(p);
         }
@@ -128,7 +128,7 @@ class CourtLineTest {
         Array<Player> players = new Array<>();
         for (int id = 0; id < 2; id++) {
             Player p = new Player(id, 0, 0f, 0f, GameConstants.PLAYER_SPEED, new PlayerInput(),
-                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y, null, null, null);
+                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y);
             p.slipper = new Slipper(0f, 0f);
             players.add(p);
         }

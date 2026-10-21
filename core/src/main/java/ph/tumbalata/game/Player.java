@@ -1,13 +1,12 @@
 package ph.tumbalata.game;
 
-import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
 
+/**
+ * One player's state in a match: position, speed, slipper, can, slipping. No art: {@link PlayerView} draws it, so the
+ * rules can run with no screen (a host or a test).
+ */
 public class Player {
     /** Colour per player number (P1 red, P2 blue, P3 green, P4 yellow), for screens before characters are picked. */
     public static final Color[] SLOT_COLORS = {
@@ -51,23 +50,6 @@ public class Player {
     private float slideTime = 0f;
     private float stunTime = 0f;
     private final Vector2 slideVelocity = new Vector2();
-
-    public float width = 48f;
-    public float height = 48f;
-
-    // Multiplies the sprite's colors (white = unchanged). Used for the placeholder character colors.
-    public Color tint = new Color(Color.WHITE);
-
-    // Ground shadow under the feet (tweak these to match the sprite)
-    public float shadowWidth = 28f;
-    public float shadowHeight = 10f;
-    public float shadowOffsetY = -19f;   // from the player's position to the CENTER of the shadow
-    public float shadowAlpha = 0.30f;
-
-    private PlayerAnimation walkAnim;
-    private PlayerAnimation walkWithSlipperAnim;
-    private PlayerAnimation walkWithCanAnim;
-    private PlayerAnimation slipperOverlayAnim;
     public boolean facingRight = true;
     public void updateFacingFromAngle(float angle) {
     // Standard normalized angle check: if pointing left-ish, flip sprite left
@@ -76,12 +58,10 @@ public class Player {
 }
 
     public Player(int id, int characterIndex, float x, float y, float speed, PlayerInput input,
-                  float minX, float maxX, float minY, float maxY,
-                  Texture normalSheet, Texture slipperSheet, Texture canSheet) {
+                  float minX, float maxX, float minY, float maxY) {
         this.id = id;
         this.characterIndex = characterIndex;
         this.name = GameSettings.defaultName(id);
-        this.tint.set(Characters.TINTS[characterIndex]);
         this.position = new Vector2(x, y);
         this.velocity = new Vector2(0, 0);
         this.speed = speed;
@@ -90,17 +70,6 @@ public class Player {
         this.maxX = maxX;
         this.minY = minY;
         this.maxY = maxY;
-
-        // Sheets may be null (unit tests run without graphics); such a player has no sprite
-        if (normalSheet != null) {
-            this.walkAnim = new PlayerAnimation(normalSheet, 0.12f);
-        }
-        if (slipperSheet != null) {
-            this.walkWithSlipperAnim = new PlayerAnimation(slipperSheet, 0.12f);
-        }
-        if (canSheet != null) {
-            this.walkWithCanAnim = new PlayerAnimation(canSheet, 0.12f);
-        }
     }
 
     // Keeps this player behind the court line (a Thrower who hasn't thrown yet). The line may lean, so the limit is
@@ -217,63 +186,5 @@ public class Player {
 
     public boolean isMoving() {
         return moving;
-    }
-
-    public void update(float delta) {
-        if (hasCan && walkWithCanAnim != null) {
-            walkWithCanAnim.update(delta, velocity);
-        } else if (hasSlipper && walkWithSlipperAnim != null) {
-            walkWithSlipperAnim.update(delta, velocity);
-            if (slipperOverlayAnim != null) slipperOverlayAnim.update(delta, velocity); // same frames, kept in step
-        } else if (walkAnim != null) {
-            walkAnim.update(delta, velocity);
-        }
-    }
-
-    /**
-     * The held slipper drawn on its own, white, from the slipper walk sheet (same layout). It is tinted in the player's
-     * colour on top of the body, which keeps the character tint. null = the sheet's slipper is part of the body.
-     */
-    public void setSlipperOverlay(Texture overlaySheet) {
-        slipperOverlayAnim = overlaySheet == null ? null : new PlayerAnimation(overlaySheet, 0.12f);
-    }
-
-    public void render(SpriteBatch batch) {
-        TextureRegion currentFrame;
-        if (hasCan && walkWithCanAnim != null) {
-            currentFrame = walkWithCanAnim.getCurrentFrame();
-        } else if (hasSlipper && walkWithSlipperAnim != null) {
-            currentFrame = walkWithSlipperAnim.getCurrentFrame();
-        } else if (walkAnim != null) {
-            currentFrame = walkAnim.getCurrentFrame();
-        } else {
-            return;
-        }
-
-        float previousColor = batch.getPackedColor();
-        batch.setColor(tint);
-        batch.draw(
-            currentFrame, 
-            position.x - width / 2f, 
-            position.y - height / 2f, 
-            width, 
-            height
-        );
-        if (hasSlipper && !hasCan && slipperOverlayAnim != null) {
-            batch.setColor(color());
-            batch.draw(slipperOverlayAnim.getCurrentFrame(), position.x - width / 2f, position.y - height / 2f, width, height);
-        }
-        batch.setPackedColor(previousColor);
-    }
-
-    /** Call inside a ShapeRenderer Filled block (with GL blending on), BEFORE the sprites are drawn. */
-    public void renderShadow(ShapeRenderer shapeRenderer) {
-        shapeRenderer.setColor(0f, 0f, 0f, shadowAlpha);
-        shapeRenderer.ellipse(
-            position.x - shadowWidth / 2f,
-            position.y + shadowOffsetY - shadowHeight / 2f,
-            shadowWidth,
-            shadowHeight
-        );
     }
 }

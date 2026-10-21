@@ -1,13 +1,8 @@
 package ph.tumbalata.game;
 
-import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.Animation;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
 
+/** The can's physics: position, height in the air, rolling and bouncing. No art: {@link CanView} draws it. */
 public class Can {
     public Vector2 position;
     public Vector2 velocity;
@@ -25,46 +20,14 @@ public class Can {
     private float wallBounceDamping = 0.75f; // Wall rebound speed retention (0.75 = retains 75% speed)
     private float tossPowerMultiplier = 3.5f; // Vertical jump scaling (lower = less air launch height)
 
-    // Animation & Rotation variables
-    private Animation<TextureRegion> spinAnimation;
-    private float stateTime = 0f;
-    private float rotationAngle = 0f;
-    private TextureRegion frontFrame;
-
-    /** Physics only, no sprite: for unit tests. Do not render a can made this way. */
-    Can(float x, float y) {
+    public Can(float x, float y) {
         this.position = new Vector2(x, y);
         this.velocity = new Vector2(0, 0);
     }
 
-    public Can(float x, float y, Texture canSpriteSheet, int frameCols, int frameRows, float frameDuration) {
-        this(x, y);
-
-        TextureRegion[][] tmp = TextureRegion.split(
-            canSpriteSheet, 
-            canSpriteSheet.getWidth() / frameCols, 
-            canSpriteSheet.getHeight() / frameRows
-        );
-
-        TextureRegion[] spinFrames = new TextureRegion[frameCols * frameRows];
-        int index = 0;
-        for (int i = 0; i < frameRows; i++) {
-            for (int j = 0; j < frameCols; j++) {
-                spinFrames[index++] = tmp[i][j];
-            }
-        }
-
-        spinAnimation = new Animation<TextureRegion>(frameDuration, spinFrames);
-        spinAnimation.setPlayMode(Animation.PlayMode.LOOP);
-        frontFrame = spinFrames[0];
-    }
-
-    // --- GETTERS FOR EXTERNAL RENDERING (GameScreen.java) ---
-    public TextureRegion getCurrentFrame() {
-        if (isHit && (velocity.len() > 0 || zPosition > 0)) {
-            return spinAnimation.getKeyFrame(stateTime, true);
-        }
-        return frontFrame;
+    /** True while the can flies or rolls after being hit or tossed (it spins). */
+    public boolean isSpinning() {
+        return isHit && (velocity.len() > 0 || zPosition > 0);
     }
 
     public float getWidth() {
@@ -170,63 +133,15 @@ public class Can {
                 }
             }
         }
-
-        // 5. Spin animation and rotation, proportional to how fast the can moves (ground speed plus vertical speed),
-        //    so it spins fast when thrown and slows down smoothly as it rolls to a stop
-        if (velocity.len() > 0 || zPosition > 0) {
-            float spin = spinRate();
-            stateTime += delta * spin;
-            rotationAngle += delta * SPIN_DEGREES_PER_SECOND * spin;
-            rotationAngle %= 360f;
-        }
     }
 
     /** At this speed (px/s) the spin animation plays at its normal frame rate. */
     static final float SPIN_REFERENCE_SPEED = 300f;
-    private static final float SPIN_DEGREES_PER_SECOND = 600f;
 
     /** Animation speed multiplier: 1 at {@link #SPIN_REFERENCE_SPEED}, 0 when the can is still. */
-    float spinRate() {
+    public float spinRate() {
         float speed = (float) Math.sqrt(velocity.len2() + zVelocity * zVelocity);
         return speed / SPIN_REFERENCE_SPEED;
-    }
-
-    // Call inside shapeRenderer block in GameScreen.java
-    public void renderShadow(ShapeRenderer shapeRenderer) {
-        shapeRenderer.setColor(0.1f, 0.1f, 0.1f, 0.35f);
-
-        // Shadow shrinks as can reaches higher altitude
-        float shadowScale = Math.max(0.4f, 1.0f - (zPosition / 250f));
-        float shadowWidth = width * shadowScale;
-        float shadowHeight = 8f * shadowScale;
-
-        // Draw shadow flat on ground at position.x / position.y
-        shapeRenderer.ellipse(
-            position.x - shadowWidth / 2f, 
-            position.y - shadowHeight / 2f, 
-            shadowWidth, 
-            shadowHeight
-        );
-    }
-
-    // Call inside spriteBatch block in GameScreen.java
-    public void render(SpriteBatch batch) {
-        TextureRegion currentFrame = getCurrentFrame();
-        float currentRotation = (isHit && (velocity.len() > 0 || zPosition > 0)) ? rotationAngle : 0f;
-
-        // Sprite offset vertically by zPosition so it jumps off the shadow!
-        batch.draw(
-            currentFrame,
-            position.x - width / 2f,
-            position.y - height / 2f + zPosition,
-            width / 2f,
-            height / 2f,
-            width,
-            height,
-            1.0f,
-            1.0f,
-            currentRotation
-        );
     }
 
     public void reset(float x, float y) {
@@ -235,7 +150,5 @@ public class Can {
         zPosition = 0f;
         zVelocity = 0f;
         isHit = false;
-        stateTime = 0f;
-        rotationAngle = 0f;
     }
 }

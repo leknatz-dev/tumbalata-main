@@ -118,10 +118,12 @@ public class GameScreen implements Screen {
 
     private final int[] characters;                        // characters[playerId] = picked character
     private final String[] names;                          // names[playerId]
-    private final Array<Player> drawOrder = new Array<>(); // players sorted back to front each frame
+    private final Array<PlayerView> drawOrder = new Array<>(); // players sorted back to front each frame
     private Match match;
     private Audio audio;
     private TumbalataGame game;
+    private PlayerView[] views;         // how each player looks, by player id
+    private CanView canView;
     private InputManager liveInputs;    // this frame's input, straight from the keyboard and pads
     private PlayerInput[] simInputs;    // what the match reads: held buttons, plus presses kept until a step uses them
     private final FixedStep fixedStep = new FixedStep();
@@ -227,20 +229,20 @@ public class GameScreen implements Screen {
         playerCanSheet = loadPixelTexture("Walkwithcan.png");
         canSheet = loadPixelTexture("can_spin_sheet.png");
 
-        Can can = new Can(Match.CAN_BASE_X, Match.CAN_BASE_Y, canSheet, 4, 1, 0.08f);
+        Can can = new Can(Match.CAN_BASE_X, Match.CAN_BASE_Y);
+        canView = new CanView(can, canSheet, 4, 1, 0.08f);
+        views = new PlayerView[characters.length];
 
         Array<Player> players = new Array<>();
         for (int id = 0; id < characters.length; id++) {
             // Position, speed and bounds are set by the match from the player's role
             Player p = new Player(id, characters[id], 0f, 0f, GameConstants.PLAYER_SPEED, simInputs[id],
-                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y,
-                playerSheet, playerSlipperSheet, playerCanSheet);
+                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y);
             p.name = names[id];
-            p.setSlipperOverlay(playerSlipperOverlay);
             p.slipper = new Slipper(0f, 0f);
-            p.slipper.color.set(Color.BROWN).lerp(p.color(), 0.5f);
             players.add(p);
-            drawOrder.add(p);
+            views[id] = new PlayerView(p, playerSheet, playerSlipperSheet, playerSlipperOverlay, playerCanSheet);
+            drawOrder.add(views[id]);
         }
 
         game = (TumbalataGame) Gdx.app.getApplicationListener();
@@ -491,6 +493,14 @@ public class GameScreen implements Screen {
         if (steps != 0) {
             for (PlayerInput in : simInputs) in.clearPresses();
         }
+        // Where to draw things: between the last two match steps while it runs, else exactly where they are
+        float alpha = fixedStep.alpha();
+        for (PlayerView v : views) {
+            if (steps < 0) v.snap();
+            else v.follow(alpha);
+        }
+        if (steps < 0) canView.snap();
+        else canView.follow(alpha);
         if (steps < 0 || pausedThisFrame) fixedStep.reset(); // no catching up on time the match was stopped
 
         ScreenUtils.clear(0f, 0f, 0f, 1f);
@@ -553,12 +563,12 @@ public class GameScreen implements Screen {
         drawPoopAndDogShapes();
         if (!effects.hasDustSprite()) effects.drawDust(shapeRenderer);
 
-        if (!taya.hasCan) can.renderShadow(shapeRenderer); // a carried can has no shadow of its own
-        for (Player p : match.players()) p.renderShadow(shapeRenderer);
+        if (!taya.hasCan) canView.drawShadow(shapeRenderer); // a carried can has no shadow of its own
+        for (PlayerView v : views) v.drawShadow(shapeRenderer);
 
         if (slipperTexture == null) { // placeholder: an oval in the owner's colour
             for (Player p : match.players()) {
-                if (match.isSlipperOut(p)) p.slipper.render(shapeRenderer);
+                if (match.isSlipperOut(p)) views[p.id].drawSlipperShape(shapeRenderer);
             }
         }
         shapeRenderer.end();
@@ -575,15 +585,15 @@ public class GameScreen implements Screen {
         // A carried can is drawn right after Taya, in Taya's hands.
         drawOrder.sort(BACK_TO_FRONT);
         boolean canDrawn = taya.hasCan;
-        for (Player p : drawOrder) {
-            if (!canDrawn && p.position.y + Match.FEET_OFFSET_Y < can.position.y) {
-                can.render(spriteBatch); // this player stands in front of the can
+        for (PlayerView v : drawOrder) {
+            if (!canDrawn && v.drawPos.y + Match.FEET_OFFSET_Y < canView.drawPos.y) {
+                canView.draw(spriteBatch); // this player stands in front of the can
                 canDrawn = true;
             }
-            p.render(spriteBatch);
-            if (p == taya && taya.hasCan) drawCarriedCan(taya, can);
+            v.draw(spriteBatch);
+            if (v.player == taya && taya.hasCan) drawCarriedCan(v);
         }
-        if (!canDrawn) can.render(spriteBatch); // in front of everyone
+        if (!canDrawn) canView.draw(spriteBatch); // in front of everyone
 
         spriteBatch.draw(upperRingTexture, ringX, ringY);
         drawTrashSprites(false);
@@ -600,14 +610,8 @@ public class GameScreen implements Screen {
     }
 
     /** The can lying sideways in Taya's hands. */
-    private void drawCarriedCan(Player taya, Can can) {
-        TextureRegion canFrame = can.getCurrentFrame();
-        float w = can.getWidth();
-        float h = can.getHeight();
-        float cx = taya.position.x;
-        float cy = taya.position.y + CARRIED_CAN_Y;
-        float s = CARRIED_CAN_SCALE;
-        spriteBatch.draw(canFrame, cx - w / 2f, cy - h / 2f, w / 2f, h / 2f, w, h, s, s, 90f);
+    private void drawCarriedCan(PlayerView taya) {
+        canView.drawCarried(spriteBatch, taya.drawPos.x, taya.drawPos.y + CARRIED_CAN_Y, CARRIED_CAN_SCALE);
     }
 
     // ------------------------------------------------------------------
@@ -713,7 +717,7 @@ public class GameScreen implements Screen {
             if (!match.isSlipperOut(p)) continue;
             float spin = p.slipper.velocity.len() > 0f ? clock * 900f + p.id * 90f : 0f; // spins while flying
             spriteBatch.setColor(p.color());
-            spriteBatch.draw(slipperTexture, p.slipper.position.x - w / 2f, p.slipper.position.y - h / 2f,
+            spriteBatch.draw(slipperTexture, views[p.id].slipperDrawPos.x - w / 2f, views[p.id].slipperDrawPos.y - h / 2f,
                 w / 2f, h / 2f, w, h, 1f, 1f, spin, 0, 0, slipperTexture.getWidth(), slipperTexture.getHeight(), false, false);
         }
         spriteBatch.setPackedColor(previous);
@@ -781,8 +785,8 @@ public class GameScreen implements Screen {
             if (!p.isDizzy()) continue;
             for (int k = 0; k < 3; k++) {
                 float a = spin + k * MathUtils.PI2 / 3f;
-                float sx = p.position.x + MathUtils.cos(a) * 12f;
-                float sy = p.position.y + 20f + MathUtils.sin(a) * 4f; // around the head, under the name tag
+                float sx = views[p.id].drawPos.x + MathUtils.cos(a) * 12f;
+                float sy = views[p.id].drawPos.y + 20f + MathUtils.sin(a) * 4f; // around the head, under the name tag
                 shapeRenderer.setColor(1f, 0.9f, 0.2f, 1f);
                 shapeRenderer.circle(sx, sy, 3f, 8);
             }
@@ -842,7 +846,11 @@ public class GameScreen implements Screen {
     private int runMatch(float delta, boolean dust) {
         int steps = fixedStep.advance(delta);
         for (int i = 0; i < steps && !match.isOver(); i++) {
+            for (PlayerView v : views) v.beforeStep();
+            canView.beforeStep();
             match.update(FixedStep.STEP);
+            for (PlayerView v : views) v.afterStep(FixedStep.STEP);
+            canView.afterStep(FixedStep.STEP);
             if (dust) effects.track(match, FixedStep.STEP);
             for (PlayerInput in : simInputs) in.clearPresses();
         }
@@ -1137,7 +1145,7 @@ public class GameScreen implements Screen {
     // HUD and labels (inside spriteBatch.begin/end)
     // ------------------------------------------------------------------
 
-    private static final Comparator<Player> BACK_TO_FRONT = (a, b) -> Float.compare(b.position.y, a.position.y);
+    private static final Comparator<PlayerView> BACK_TO_FRONT = (a, b) -> Float.compare(b.drawPos.y, a.drawPos.y);
 
     /** "P1" over each player in their slot colour; the Taya is marked, Throwers who already threw are dimmed. */
     private void drawNameTags() {
@@ -1148,7 +1156,7 @@ public class GameScreen implements Screen {
             Color c = p.color();
             float a = (p != taya && p.hasThrown) ? 0.7f : 1f;
             // the player's colour with a dark stroke, readable on any part of the court
-            Fonts.drawStroked(spriteBatch, font, text, p.position.x - 50f, p.position.y + NAME_TAG_Y, 100f, Align.center,
+            Fonts.drawStroked(spriteBatch, font, text, views[p.id].drawPos.x - 50f, views[p.id].drawPos.y + NAME_TAG_Y, 100f, Align.center,
                 new Color(c.r, c.g, c.b, a), new Color(0f, 0f, 0f, 0.85f * a), 1.5f);
         }
         font.getData().setScale(1.2f);
@@ -1162,9 +1170,9 @@ public class GameScreen implements Screen {
         String count = String.valueOf(MathUtils.ceil(match.canLockTimeLeft()));
         font.getData().setScale(3f);
         font.setColor(0f, 0f, 0f, 0.85f);
-        font.draw(spriteBatch, count, can.position.x - 20f + 2f, can.position.y + 52f - 2f, 40f, Align.center, false);
+        font.draw(spriteBatch, count, canView.drawPos.x - 20f + 2f, canView.drawPos.y + 52f - 2f, 40f, Align.center, false);
         font.setColor(Color.GOLD);
-        font.draw(spriteBatch, count, can.position.x - 20f, can.position.y + 52f, 40f, Align.center, false);
+        font.draw(spriteBatch, count, canView.drawPos.x - 20f, canView.drawPos.y + 52f, 40f, Align.center, false);
         font.getData().setScale(1.2f);
         font.setColor(Color.WHITE);
     }
@@ -1211,12 +1219,12 @@ public class GameScreen implements Screen {
                     || match.canPlaceCanHere()));
             boolean a = canPressA(p);
             if (a && b) {
-                buttonCircle(p.position.x - 10f, p.position.y + BUTTON_Y, BUTTON_A);
-                buttonCircle(p.position.x + 10f, p.position.y + BUTTON_Y, BUTTON_B);
+                buttonCircle(views[p.id].drawPos.x - 10f, views[p.id].drawPos.y + BUTTON_Y, BUTTON_A);
+                buttonCircle(views[p.id].drawPos.x + 10f, views[p.id].drawPos.y + BUTTON_Y, BUTTON_B);
             } else if (a) {
-                buttonCircle(p.position.x, p.position.y + BUTTON_Y, BUTTON_A);
+                buttonCircle(views[p.id].drawPos.x, views[p.id].drawPos.y + BUTTON_Y, BUTTON_A);
             } else if (b) {
-                buttonCircle(p.position.x, p.position.y + BUTTON_Y, BUTTON_B);
+                buttonCircle(views[p.id].drawPos.x, views[p.id].drawPos.y + BUTTON_Y, BUTTON_B);
             }
         }
         if (art) {
@@ -1261,7 +1269,7 @@ public class GameScreen implements Screen {
             Color c = popup.player.color();
             font.setColor(c.r, c.g, c.b, 1f - t);
             Player p = popup.player;
-            font.draw(spriteBatch, popup.text, p.position.x - 30f, p.position.y + NAME_TAG_Y + 22f + t * POPUP_RISE,
+            font.draw(spriteBatch, popup.text, views[p.id].drawPos.x - 30f, views[p.id].drawPos.y + NAME_TAG_Y + 22f + t * POPUP_RISE,
                 60f, Align.center, false);
         }
         font.getData().setScale(1.2f);
@@ -1339,7 +1347,7 @@ public class GameScreen implements Screen {
             float w = arrow.getWidth() * ARROW_SCALE, h = arrow.getHeight() * ARROW_SCALE;
             spriteBatch.begin();
             spriteBatch.setColor(aimer.color());
-            spriteBatch.draw(arrow, aimer.position.x - tailX, aimer.position.y - tailY, tailX, tailY, w, h, 1f, 1f,
+            spriteBatch.draw(arrow, views[aimer.id].drawPos.x - tailX, views[aimer.id].drawPos.y - tailY, tailX, tailY, w, h, 1f, 1f,
                 match.angle() - 45f, 0, 0, arrow.getWidth(), arrow.getHeight(), false, false);
             spriteBatch.setColor(Color.WHITE);
             spriteBatch.end();
@@ -1350,20 +1358,20 @@ public class GameScreen implements Screen {
             shapeRenderer.setColor(isTaya ? Color.RED : Color.BLUE);
             float rad = match.angle() * MathUtils.degreesToRadians;
             shapeRenderer.line(
-                aimer.position.x,
-                aimer.position.y,
-                aimer.position.x + MathUtils.cos(rad) * 65f,
-                aimer.position.y + MathUtils.sin(rad) * 65f
+                views[aimer.id].drawPos.x,
+                views[aimer.id].drawPos.y,
+                views[aimer.id].drawPos.x + MathUtils.cos(rad) * 65f,
+                views[aimer.id].drawPos.y + MathUtils.sin(rad) * 65f
             );
             shapeRenderer.end();
         } else if (match.aim() == Match.Aim.POWER) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
             shapeRenderer.setColor(Color.LIGHT_GRAY);
-            shapeRenderer.rect(aimer.position.x - 25, aimer.position.y + 30, 50, 10);
+            shapeRenderer.rect(views[aimer.id].drawPos.x - 25, views[aimer.id].drawPos.y + 30, 50, 10);
 
             shapeRenderer.setColor(isTaya ? Color.RED : Color.GREEN);
-            shapeRenderer.rect(aimer.position.x - 25, aimer.position.y + 30, 50 * (match.power() / 100f), 10);
+            shapeRenderer.rect(views[aimer.id].drawPos.x - 25, views[aimer.id].drawPos.y + 30, 50 * (match.power() / 100f), 10);
             shapeRenderer.end();
         }
     }

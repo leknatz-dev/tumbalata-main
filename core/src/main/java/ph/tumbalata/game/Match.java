@@ -516,7 +516,6 @@ public class Match {
             p.prevPosition.set(p.position);
             if (p == taya) p.handleInput(delta);
             else p.stop();
-            p.update(delta);
         }
         playerWalls.slide(taya.position, taya.prevPosition.x, taya.prevPosition.y,
             PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
@@ -552,7 +551,6 @@ public class Match {
     private void step(float delta) {
         for (int pi = 0; pi < players.size; pi++) {
             Player p = players.get(pi);
-            p.update(delta);
             playerWalls.slide(p.position, p.prevPosition.x, p.prevPosition.y,
                 PLAYER_HITBOX_W, PLAYER_HITBOX_H, PLAYER_HITBOX_OFFSET_Y);
         }
