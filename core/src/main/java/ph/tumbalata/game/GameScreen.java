@@ -54,7 +54,6 @@ public class GameScreen implements Screen {
     // Centre of the court's centre circle in the art (world units): the can's base when the map has no "can base" layer
     private static final float COURT_CENTRE_X = 704f;
     private static final float COURT_CENTRE_Y = 177f;
-    private static final float MATCH_TIME_SECONDS = 360f;
     private static final int VICTORY_WINDOW_W = 700;
     private static final int VICTORY_WINDOW_H = 500;
     private static final int MENU_WINDOW_W = 700;
@@ -117,6 +116,8 @@ public class GameScreen implements Screen {
 
     private final int[] characters;                        // characters[playerId] = picked character
     private final String[] names;                          // names[playerId]
+    private final int[] localInputs;                       // localInputs[playerId] = input slot on this device
+    private final Lobby.Settings settings = new Lobby.Settings(); // this match's settings (a copy of the lobby's)
     private final Array<PlayerView> drawOrder = new Array<>(); // players sorted back to front each frame
     private Match match;
     private Audio audio;
@@ -126,7 +127,7 @@ public class GameScreen implements Screen {
     private InputManager liveInputs;    // this frame's input, straight from the keyboard and pads
     private PlayerInput[] simInputs;    // what the match reads, filled in from each step's InputFrame
     private LocalInputSource localInput; // this device's keyboard and pads, as InputFrames
-    private InputSource[] inputSources; // where each player's input comes from (all this device, for now)
+    private InputSource[] inputSources; // where each player's input comes from (this device's slots, for now)
     private final InputFrame frame = new InputFrame();
     private final FixedStep fixedStep = new FixedStep();
     private Signs signs;
@@ -173,24 +174,18 @@ public class GameScreen implements Screen {
     }
     private final Array<Popup> popups = new Array<>();
 
-    /** @param characters one picked character per player (2 to 4 players); characters[0] is Player 1's */
-    public GameScreen(int[] characters) {
-        this(characters, null);
-    }
-
-    /** @param names each player's name (index 0 = Player 1), or null for "P1"..."P4" */
-    public GameScreen(int[] characters, String[] names) {
-        if (characters.length < 2 || characters.length > InputManager.MAX_PLAYERS) {
-            throw new IllegalArgumentException("2 to " + InputManager.MAX_PLAYERS + " players, got " + characters.length);
+    /** A match for the players in the lobby (2 to 4, with their names and characters), with its settings. */
+    public GameScreen(Lobby lobby) {
+        if (lobby.size() < Lobby.MIN_PLAYERS || lobby.size() > InputManager.MAX_PLAYERS) {
+            throw new IllegalArgumentException("2 to " + InputManager.MAX_PLAYERS + " players, got " + lobby.size());
         }
-        this.characters = new int[characters.length];
-        for (int i = 0; i < characters.length; i++) {
-            this.characters[i] = MathUtils.clamp(characters[i], 0, Characters.COUNT - 1);
-        }
-        this.names = new String[characters.length];
-        for (int i = 0; i < characters.length; i++) {
-            this.names[i] = (names != null && i < names.length && names[i] != null) ? names[i] : GameSettings.defaultName(i);
-        }
+        this.characters = lobby.characters();
+        this.names = lobby.names();
+        this.localInputs = new int[lobby.size()];
+        for (int i = 0; i < localInputs.length; i++) localInputs[i] = lobby.slot(i).localInput();
+        settings.matchSeconds = lobby.settings.matchSeconds;
+        settings.streetEvents = lobby.settings.streetEvents;
+        settings.characterTraits = lobby.settings.characterTraits;
     }
 
     @Override
@@ -214,7 +209,7 @@ public class GameScreen implements Screen {
         for (int id = 0; id < simInputs.length; id++) simInputs[id] = new PlayerInput();
         localInput = new LocalInputSource(inputs);
         inputSources = new InputSource[characters.length];
-        java.util.Arrays.fill(inputSources, localInput);
+        for (int id = 0; id < inputSources.length; id++) inputSources[id] = localInput.slot(localInputs[id]);
 
         map = new TmxMapLoader().load(MAP_FILE);
         mapRenderer = new OrthogonalTiledMapRenderer(map, 1f, spriteBatch);
@@ -281,13 +276,13 @@ public class GameScreen implements Screen {
         if (Gdx.files.internal("arrow_default.png").exists()) arrowDefault = loadPixelTexture("arrow_default.png");
         if (Gdx.files.internal("arrow_sniper.png").exists()) arrowSniper = loadPixelTexture("arrow_sniper.png");
 
-        match = new Match(players, can, playerWalls, canBlockers, MATCH_TIME_SECONDS);
+        match = new Match(players, can, playerWalls, canBlockers, settings.matchSeconds);
         Vector2 canBase = CourtLine.canBaseFromMap(map); // the "can base" layer in Tiled, if there is one
         if (canBase == null) canBase = new Vector2(COURT_CENTRE_X, COURT_CENTRE_Y); // otherwise the centre circle
         match.setCanBase(canBase.x, canBase.y);
         match.setCourt(CourtLine.fromMap(map, Match.THROW_LINE_X)); // the court line and throw area drawn in Tiled
-        match.setCharacterTraits(true);
-        match.setStreetEvents(game.settings().streetEvents());
+        match.setCharacterTraits(settings.characterTraits);
+        match.setStreetEvents(settings.streetEvents);
 
         Dialogue dialogue = new Dialogue(loadIntroLines());
         dialogueBox = new DialogueBox(dialogue, characters, names, audio);
@@ -1041,6 +1036,8 @@ public class GameScreen implements Screen {
             case STREET_EVENTS:
                 boolean on = !game.settings().streetEvents();
                 game.settings().setStreetEvents(on);
+                game.lobby().settings.streetEvents = on;
+                settings.streetEvents = on;
                 match.setStreetEvents(on);
                 audio.play(Audio.Sfx.UI_CONFIRM);
                 break;
@@ -1067,7 +1064,7 @@ public class GameScreen implements Screen {
         pauseLabels[PauseMenu.Item.RESUME.ordinal()] = "RESUME";
         pauseLabels[PauseMenu.Item.RESTART_ROUND.ordinal()] = "RESTART ROUND";
         pauseLabels[PauseMenu.Item.SOUND.ordinal()] = "SOUND: " + (audio.isMuted() ? "OFF" : "ON");
-        pauseLabels[PauseMenu.Item.STREET_EVENTS.ordinal()] = "STREET EVENTS: " + (game.settings().streetEvents() ? "ON" : "OFF");
+        pauseLabels[PauseMenu.Item.STREET_EVENTS.ordinal()] = "STREET EVENTS: " + (settings.streetEvents ? "ON" : "OFF");
         pauseLabels[PauseMenu.Item.EXIT.ordinal()] = "EXIT TO MENU";
         return pauseLabels;
     }

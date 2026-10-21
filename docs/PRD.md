@@ -453,8 +453,8 @@ The goal is a phone game (Android first, iPhone later) played over the network: 
 | 2 | Split the art out of `Player`, `Can` and `Slipper` into `PlayerView` and `CanView`, so the rules can run with no screen (on the host). The views draw between the last two match steps, so movement is smooth on 90 and 120 Hz screens; a jump of more than 64 px in one step (a respawn) is drawn straight away. Adding art is unchanged: PNGs in `assets/`, loaded by `GameScreen` and handed to the views | Done |
 | 3 | `MatchFlow` runs the whole match with no graphics: dialogue → mano → can spot → GAME START → play → GOOD JOB, the hit-stop freezes, and waits as long as the matching sign. The dialogue logic is `Dialogue` (`DialogueBox` only draws it). `GameScreen` runs the flow in fixed steps and draws, plays sounds and shows signs when the flow tells it to | Done |
 | 4 | Each match step, every player gives an `InputFrame` (stick + A, B, Start, packable into one int) from their `InputSource`; presses are worked out from the step before (`PlayerInput.apply`). `LocalInputSource` is this device; touch and the network will be other sources. Taps shorter than a step still count; buttons used by the pause menu don't. Same frames = same match (tested) | Done |
-| 5 | A lobby model of player slots (name, character, ready, where the input comes from), which becomes the waiting room | Next |
-| 6 | A viewport that fits any phone screen shape (no window resizing) | |
+| 5 | `Lobby` (held by `TumbalataGame`): one slot per player (name, character, locked in, which input slot on this device plays them) and the match settings (time, street events, character traits). The menus fill it in, the "each character once" rule lives in it, and `GameScreen` is made from it. It becomes the waiting room | Done |
+| 6 | A viewport that fits any phone screen shape (no window resizing) | Next |
 
 Then: the server screen and waiting room over LAN, then the Android build with touch controls, then private room codes.
 

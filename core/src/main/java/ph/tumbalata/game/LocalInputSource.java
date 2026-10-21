@@ -32,11 +32,17 @@ public final class LocalInputSource implements InputSource {
         }
     }
 
+    /** Samples input slot {@code player} (keyboard scheme / pad number on this device). */
     @Override
     public void sample(int player, InputFrame out) {
         PlayerInput in = live.apply(player);
         int held = (in.a ? InputFrame.A : 0) | (in.b ? InputFrame.B : 0) | (in.start ? InputFrame.START : 0);
         out.set(in.moveX, in.moveY, held | tapped[player]);
         tapped[player] = 0;
+    }
+
+    /** A source that always reads this device's input slot {@code localSlot}, whichever player it plays as. */
+    public InputSource slot(int localSlot) {
+        return (player, out) -> sample(localSlot, out);
     }
 }

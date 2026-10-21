@@ -82,6 +82,13 @@ public class TumbalataGame extends Game {
         return settings;
     }
 
+    // The players getting ready for the next match (names, characters, match settings). One for the whole game.
+    private final Lobby lobby = new Lobby();
+
+    public Lobby lobby() {
+        return lobby;
+    }
+
     @Override
     public void create() {
         transition = new ScreenTransition();
@@ -89,6 +96,7 @@ public class TumbalataGame extends Game {
         input = new InputManager();
         audio = new Audio();
         settings = new GameSettings();
+        lobby.settings.streetEvents = settings.streetEvents();
         // Size the launcher gave the window (also where "untouched" starts)
         autoW = Gdx.graphics.getWidth();
         autoH = Gdx.graphics.getHeight();

@@ -85,8 +85,7 @@ public class CharacterSelectScreen implements Screen {
     private Texture sharedPortrait; // character.png: one white character for every card that has no charN.png
 
     private final Rectangle[] cardBounds = new Rectangle[Characters.COUNT];
-    private final int[] cursor;      // cursor[player] = card that player is on
-    private final boolean[] locked;  // locked[player] = player has confirmed their pick
+    private final Lobby lobby;       // who is on which card and who has locked in (the rules for picking live there)
 
     private static final float TAKEN_MESSAGE_SECONDS = 1.5f;
     private String takenMessage = "";
@@ -96,38 +95,39 @@ public class CharacterSelectScreen implements Screen {
     private final Vector2 mouse = new Vector2();
     private float lastMouseX = -1f, lastMouseY = -1f;
 
-    /** @param names each player's name (index 0 = Player 1), from the name entry screen */
-    public CharacterSelectScreen(TumbalataGame game, int playerCount, String[] names) {
+    /** The players in the game's {@link Lobby} pick their characters. */
+    public CharacterSelectScreen(TumbalataGame game) {
         this.game = game;
-        this.playerCount = playerCount;
-        this.names = names;
+        this.lobby = game.lobby();
+        lobby.unlockAll(); // everyone picks (again), starting on the card they had
+        this.playerCount = lobby.size();
+        this.names = lobby.names();
         this.tagWidths = new float[playerCount];
-        this.cursor = new int[playerCount];
-        this.locked = new boolean[playerCount];
-        for (int p = 0; p < playerCount; p++) cursor[p] = p % Characters.COUNT; // everyone starts on a different card
     }
 
-    /** Player who has locked in on this card, or -1. Each character can only be locked by one player. */
-    private int lockedBy(int card) {
-        for (int p = 0; p < playerCount; p++) if (locked[p] && cursor[p] == card) return p;
-        return -1;
+    /** The card player p is on. */
+    private int card(int p) {
+        return lobby.slot(p).character();
+    }
+
+    private boolean isLocked(int p) {
+        return lobby.slot(p).isLocked();
     }
 
     /** Locks player p on their card, unless someone else already has it (then shows a short "taken" message). */
     private void tryLock(int p) {
-        int owner = lockedBy(cursor[p]);
-        if (owner >= 0 && owner != p) {
-            takenMessage = names[p] + ": " + Characters.NAMES[cursor[p]] + " IS TAKEN BY " + names[owner];
+        int owner = lobby.lock(p);
+        if (owner >= 0) {
+            takenMessage = names[p] + ": " + Characters.NAMES[card(p)] + " IS TAKEN BY " + names[owner];
             takenMessageTime = TAKEN_MESSAGE_SECONDS;
             game.audio().play(Audio.Sfx.UI_DENY);
             return;
         }
-        locked[p] = true;
         game.audio().play(Audio.Sfx.UI_CONFIRM);
     }
 
     private boolean anyCursorOn(int card) {
-        for (int p = 0; p < playerCount; p++) if (cursor[p] == card) return true;
+        for (int p = 0; p < playerCount; p++) if (card(p) == card) return true;
         return false;
     }
 
@@ -188,7 +188,7 @@ public class CharacterSelectScreen implements Screen {
             backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
         }
 
-        Rectangle sel = cardBounds[cursor[0]];
+        Rectangle sel = cardBounds[card(0)];
         float bob = (MathUtils.sin(time * SLIPPER_BOB_SPEED) + 1f) / 2f * SLIPPER_BOB_AMOUNT;
 
         // --- Shapes: placeholder background, cards, selection border, player tags, placeholder slipper ---
@@ -220,7 +220,7 @@ public class CharacterSelectScreen implements Screen {
         for (int i = 0; i < Characters.COUNT; i++) drawStatBars(cardBounds[i], i);
         for (int p = 0; p < playerCount; p++) {
             Color c = Player.SLOT_COLORS[p];
-            shapeRenderer.setColor(c.r, c.g, c.b, locked[p] ? 1f : 0.45f);
+            shapeRenderer.setColor(c.r, c.g, c.b, isLocked(p) ? 1f : 0.45f);
             shapeRenderer.rect(tagX(p), tagY(p), tagWidths[p], TAG_H);
         }
         if (slipperTexture == null) {
@@ -254,7 +254,7 @@ public class CharacterSelectScreen implements Screen {
             font.draw(batch, Characters.NAMES[i], r.x + (r.width - layout.width) / 2f, r.y - 6f); // under the box
             drawStatLabels(r, i);
 
-            int owner = lockedBy(i);
+            int owner = lobby.lockedBy(i);
             if (owner >= 0) { // "TAKEN" in black across the (white) box, so it stands out
                 String taken = "TAKEN";
                 layout.setText(font, taken);
@@ -272,7 +272,7 @@ public class CharacterSelectScreen implements Screen {
         }
         font.setColor(Color.WHITE);
 
-        String message = allLocked() ? "GET READY!" : takenMessageTime > 0f ? takenMessage : null;
+        String message = lobby.allLocked() ? "GET READY!" : takenMessageTime > 0f ? takenMessage : null;
         if (message != null) { // otherwise the controller hints are drawn below, after the batch
             layout.setText(font, message);
             font.draw(batch, message, (MENU_WIDTH - layout.width) / 2f, HINT_Y);
@@ -369,19 +369,14 @@ public class CharacterSelectScreen implements Screen {
 
     /** Left edge of player p's name tag, centred over the card they are on. */
     private float tagX(int p) {
-        return cardBounds[cursor[p]].x + (CARD_W - tagWidths[p]) / 2f;
+        return cardBounds[card(p)].x + (CARD_W - tagWidths[p]) / 2f;
     }
 
     /** Bottom of player p's name tag: players on the same card stack upwards. */
     private float tagY(int p) {
         int slot = 0;
-        for (int q = 0; q < p; q++) if (cursor[q] == cursor[p]) slot++;
+        for (int q = 0; q < p; q++) if (card(q) == card(p)) slot++;
         return CARDS_Y + CARD_H + TAGS_ABOVE_CARD + slot * (TAG_H + TAG_GAP);
-    }
-
-    private boolean allLocked() {
-        for (int p = 0; p < playerCount; p++) if (!locked[p]) return false;
-        return true;
     }
 
     private void handleInput() {
@@ -393,17 +388,17 @@ public class CharacterSelectScreen implements Screen {
         boolean back = in.back; // Esc
         for (int p = 0; p < playerCount; p++) {
             PlayerInput pin = input.player(p);
-            if (locked[p]) {
+            if (isLocked(p)) {
                 if (pin.bPressed) {
-                    locked[p] = false;
+                    lobby.unlock(p);
                     game.audio().play(Audio.Sfx.UI_BACK);
                 }
                 continue;
             }
-            int before = cursor[p];
-            if (pin.leftPressed) cursor[p] = (cursor[p] + Characters.COUNT - 1) % Characters.COUNT;
-            if (pin.rightPressed) cursor[p] = (cursor[p] + 1) % Characters.COUNT;
-            if (cursor[p] != before) game.audio().play(Audio.Sfx.UI_MOVE);
+            int before = card(p);
+            if (pin.leftPressed) lobby.choose(p, card(p) - 1);
+            if (pin.rightPressed) lobby.choose(p, card(p) + 1);
+            if (card(p) != before) game.audio().play(Audio.Sfx.UI_MOVE);
             if (pin.aPressed || pin.startPressed) tryLock(p);
             else if (pin.bPressed) back = true; // B with nothing to cancel goes back a screen
         }
@@ -411,7 +406,7 @@ public class CharacterSelectScreen implements Screen {
         if (back) {
             leaving = true;
             game.audio().play(Audio.Sfx.UI_BACK);
-            game.changeScreen(new NameEntryScreen(game, playerCount), MENU_WINDOW_W, MENU_WINDOW_H);
+            game.changeScreen(new NameEntryScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
             return;
         }
 
@@ -426,23 +421,23 @@ public class CharacterSelectScreen implements Screen {
             if (cardBounds[i].contains(mouse.x, mouse.y)) hovered = i;
         }
         // The mouse drives Player 1: hover to move, click to lock in
-        if (!locked[0]) {
-            if (hovered != -1 && mouseMoved && cursor[0] != hovered) {
-                cursor[0] = hovered;
+        if (!isLocked(0)) {
+            if (hovered != -1 && mouseMoved && card(0) != hovered) {
+                lobby.choose(0, hovered);
                 game.audio().play(Audio.Sfx.UI_MOVE);
             }
             if (Gdx.input.justTouched() && hovered != -1) {
-                cursor[0] = hovered;
+                lobby.choose(0, hovered);
                 tryLock(0);
             }
         }
 
-        if (allLocked()) startGame();
+        if (lobby.allLocked()) startGame();
     }
 
     private void startGame() {
         leaving = true;
-        game.changeScreen(new GameScreen(cursor.clone(), names), GAME_WINDOW_W, GAME_WINDOW_H);
+        game.changeScreen(new GameScreen(lobby), GAME_WINDOW_W, GAME_WINDOW_H);
     }
 
     @Override

@@ -83,9 +83,10 @@ public class NameEntryScreen implements Screen {
         }
     };
 
-    public NameEntryScreen(TumbalataGame game, int playerCount) {
+    /** Names the players in the game's {@link Lobby}. */
+    public NameEntryScreen(TumbalataGame game) {
         this.game = game;
-        this.playerCount = playerCount;
+        this.playerCount = game.lobby().size();
         names = new StringBuilder[playerCount];
         cursor = new int[playerCount];
         ready = new boolean[playerCount];
@@ -143,11 +144,6 @@ public class NameEntryScreen implements Screen {
         int i = LETTERS.indexOf(n.charAt(cursor[p]));
         if (i < 0) i = 0;
         n.setCharAt(cursor[p], LETTERS.charAt((i + step + LETTERS.length()) % LETTERS.length()));
-    }
-
-    private String finalName(int p) {
-        String n = names[p].toString().trim();
-        return n.isEmpty() ? GameSettings.defaultName(p) : n;
     }
 
     // ------------------------------------------------------------------
@@ -302,11 +298,8 @@ public class NameEntryScreen implements Screen {
 
     private void startCharacterSelect() {
         leaving = true;
-        String[] chosen = new String[playerCount];
-        for (int p = 0; p < playerCount; p++) {
-            chosen[p] = finalName(p);
-        }
-        game.changeScreen(new CharacterSelectScreen(game, playerCount, chosen), MENU_WINDOW_W, MENU_WINDOW_H);
+        for (int p = 0; p < playerCount; p++) game.lobby().setName(p, names[p].toString()); // blank = "P1"...
+        game.changeScreen(new CharacterSelectScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
     }
 
     @Override

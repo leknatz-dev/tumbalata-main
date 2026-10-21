@@ -270,6 +270,7 @@ public class PlayerSelectScreen implements Screen {
 
     private void toggleStreetEvents() {
         game.settings().setStreetEvents(!game.settings().streetEvents());
+        game.lobby().settings.streetEvents = game.settings().streetEvents();
         game.audio().play(Audio.Sfx.UI_CONFIRM);
     }
 
@@ -277,7 +278,8 @@ public class PlayerSelectScreen implements Screen {
         leaving = true;
         game.audio().play(Audio.Sfx.UI_CONFIRM);
         if (game != null) {
-            game.changeScreen(new NameEntryScreen(game, playerCount), MENU_WINDOW_W, MENU_WINDOW_H);
+            game.lobby().reset(playerCount); // new players: names blank, nobody picked yet
+            game.changeScreen(new NameEntryScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
         }
     }
 
