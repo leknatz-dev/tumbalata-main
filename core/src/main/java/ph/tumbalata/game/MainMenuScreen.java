@@ -15,15 +15,11 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.ScreenUtils;
-import com.badlogic.gdx.utils.viewport.FitViewport;
-import com.badlogic.gdx.utils.viewport.Viewport;
 
 public class MainMenuScreen implements Screen {
     private static final float MENU_WIDTH = 700f;
     private static final float MENU_HEIGHT = 500f;
 
-    private static final int MENU_WINDOW_W = 700;
-    private static final int MENU_WINDOW_H = 500;
 
     private static final String BACKGROUND_FILE = "menu_background.png";   // only used if the live background can't load
     private static final float BACKDROP_DIM = 0.35f;                        // how much the live map is darkened (0 = not at all)
@@ -52,7 +48,7 @@ public class MainMenuScreen implements Screen {
     private final TumbalataGame game;
 
     private OrthographicCamera camera;
-    private Viewport viewport;
+    private MenuViewport viewport;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
     private ControlHints hints;
@@ -84,8 +80,8 @@ public class MainMenuScreen implements Screen {
     game.audio().playMusic(Audio.Track.MENU); // keeps playing if it already is
 
     camera = new OrthographicCamera();
-    viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
-    viewport.apply(true);
+    viewport = new MenuViewport(camera);
+    viewport.apply();
 
     batch = new SpriteBatch();
     shapeRenderer = new ShapeRenderer();
@@ -124,7 +120,7 @@ public class MainMenuScreen implements Screen {
 
         // Live background: the game map with the 4 characters walking around (shared across the menu screens)
         if (backdrop != null) {
-            backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
+            backdrop.renderDimmed(delta, shapeRenderer, viewport, BACKDROP_DIM);
         }
 
         boolean needShapes = background == null || startTexture == null || exitTexture == null || slipperTexture == null;
@@ -132,7 +128,7 @@ public class MainMenuScreen implements Screen {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
             if (backdrop == null && background == null) {
                 shapeRenderer.setColor(0.18f, 0.35f, 0.25f, 1f);
-                shapeRenderer.rect(0, 0, MENU_WIDTH, MENU_HEIGHT);
+                shapeRenderer.rect(viewport.left(), viewport.bottom(), viewport.visibleWidth(), viewport.visibleHeight());
             }
             if (startTexture == null) {
                 shapeRenderer.setColor(Color.DARK_GRAY);
@@ -147,7 +143,7 @@ public class MainMenuScreen implements Screen {
 
         batch.begin();
 
-        if (backdrop == null && background != null) batch.draw(background, 0, 0, MENU_WIDTH, MENU_HEIGHT);
+        if (backdrop == null && background != null) batch.draw(background, viewport.left(), viewport.bottom(), viewport.visibleWidth(), viewport.visibleHeight());
 
         float titleBob = MathUtils.sin(time * TITLE_BOB_SPEED) * TITLE_BOB_AMOUNT;
         if (titleTexture != null) {
@@ -231,7 +227,7 @@ public class MainMenuScreen implements Screen {
         game.audio().play(Audio.Sfx.UI_CONFIRM);
         if (index == 0) {
             leaving = true;
-            game.changeScreen(new PlayerSelectScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
+            game.changeScreen(new PlayerSelectScreen(game));
         } else {
             Gdx.app.exit();
         }

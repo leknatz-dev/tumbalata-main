@@ -5,8 +5,9 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 
 /**
- * Owns ALL window handling (resize + fullscreen) so every screen behaves the same.
- * Screens should switch with changeScreen(...) and call toggleFullscreen() on F11.
+ * Owns the window and screen changes. One window (or a phone screen) for the whole game, any size or shape: every
+ * screen fits itself to it (menus with {@link MenuViewport}, the match letterboxed). Screens switch with
+ * {@link #changeScreen(Screen)} and call {@link #toggleFullscreen()} on F11.
  */
 public class TumbalataGame extends Game {
     // Platform step run before the controllers are read (the desktop launcher loads extra pad mappings here)
@@ -21,13 +22,8 @@ public class TumbalataGame extends Game {
         this.controllerSetup = controllerSetup;
     }
 
-    private static final int DEFAULT_WINDOW_W = 700;
-    private static final int DEFAULT_WINDOW_H = 500;
-
-    // The windowed size WE last set. If the window is any other size, the player resized or maximized it
-    // by hand, and we must not override that.
-    private int autoW = DEFAULT_WINDOW_W;
-    private int autoH = DEFAULT_WINDOW_H;
+    // The window size before going fullscreen, to come back to
+    private int windowedW, windowedH;
 
     // One live background shared by the menu screens, so the characters keep walking across screen changes
     private MenuBackdrop backdrop;
@@ -97,32 +93,24 @@ public class TumbalataGame extends Game {
         audio = new Audio();
         settings = new GameSettings();
         lobby.settings.streetEvents = settings.streetEvents();
-        // Size the launcher gave the window (also where "untouched" starts)
-        autoW = Gdx.graphics.getWidth();
-        autoH = Gdx.graphics.getHeight();
+        windowedW = Gdx.graphics.getWidth();
+        windowedH = Gdx.graphics.getHeight();
         setScreen(new MainMenuScreen(this));
     }
 
     // A screen change that was requested during this frame. It is carried out at the end of the frame, after the
     // current screen has drawn its last frame (which becomes the transition's snapshot).
     private Screen pendingScreen;
-    private int pendingW, pendingH;
 
     /** True while a screen change is pending or its can sweep is still playing. */
     public boolean isTransitioning() {
         return transition.isActive() || pendingScreen != null;
     }
 
-    /**
-     * Switches screens with the can sweep. Requests made while a transition is already playing are ignored.
-     * The window is resized to width x height ONLY if it is untouched (not fullscreen, not maximized/resized by hand),
-     * and that happens when the sweep is finished.
-     */
-    public void changeScreen(Screen newScreen, int width, int height) {
+    /** Switches screens with the can sweep. Requests made while a transition is already playing are ignored. */
+    public void changeScreen(Screen newScreen) {
         if (transition.isActive() || pendingScreen != null) return;
         pendingScreen = newScreen;
-        pendingW = width;
-        pendingH = height;
     }
 
     private void switchNow(Screen newScreen) {
@@ -144,12 +132,11 @@ public class TumbalataGame extends Game {
         super.render(); // draws the current screen (and lets it read input, which may request a screen change)
 
         if (pendingScreen != null) {
-            final int w = pendingW, h = pendingH;
             Screen next = pendingScreen;
             pendingScreen = null;
 
             transition.captureSnapshot();               // the old screen's last frame
-            transition.begin(() -> applyWindowSize(w, h));
+            transition.begin(null);
             audio.play(Audio.Sfx.TRANSITION_ROLL);
             switchNow(next);                            // the new screen is underneath; the snapshot covers it
             return;
@@ -159,21 +146,12 @@ public class TumbalataGame extends Game {
         transition.draw();
     }
 
-    private void applyWindowSize(int width, int height) {
-        if (Gdx.graphics.isFullscreen()) return;
-
-        boolean untouched = Gdx.graphics.getWidth() == autoW && Gdx.graphics.getHeight() == autoH;
-        if (untouched) {
-            Gdx.graphics.setWindowedMode(width, height);
-            autoW = width;
-            autoH = height;
-        }
-    }
-
     public void toggleFullscreen() {
         if (Gdx.graphics.isFullscreen()) {
-            Gdx.graphics.setWindowedMode(autoW, autoH);
+            Gdx.graphics.setWindowedMode(windowedW, windowedH);
         } else {
+            windowedW = Gdx.graphics.getWidth();
+            windowedH = Gdx.graphics.getHeight();
             Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
         }
     }

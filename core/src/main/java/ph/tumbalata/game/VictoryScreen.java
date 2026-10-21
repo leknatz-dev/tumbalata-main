@@ -13,8 +13,6 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ScreenUtils;
-import com.badlogic.gdx.utils.viewport.FitViewport;
-import com.badlogic.gdx.utils.viewport.Viewport;
 
 /**
  * Victory screen (placeholder art): a podium where the highest score stands in the MIDDLE and is the biggest.
@@ -24,8 +22,6 @@ public class VictoryScreen implements Screen {
     // --- SCREEN SIZE (same as the other menus) ---
     private static final float MENU_WIDTH = 700f;
     private static final float MENU_HEIGHT = 500f;
-    private static final int MENU_WINDOW_W = 700;
-    private static final int MENU_WINDOW_H = 500;
 
     // --- ASSET FILES (all optional - placeholders are drawn if missing) ---
     // Background: the same live map as the main menu (shared MenuBackdrop); this image only if that can't load
@@ -76,7 +72,7 @@ public class VictoryScreen implements Screen {
     private final Array<Awards.Award> awards;
 
     private OrthographicCamera camera;
-    private Viewport viewport;
+    private MenuViewport viewport;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
     private BitmapFont font;
@@ -184,8 +180,8 @@ public class VictoryScreen implements Screen {
         game.audio().playMusic(Audio.Track.VICTORY);
 
         camera = new OrthographicCamera();
-        viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
-        viewport.apply(true);
+        viewport = new MenuViewport(camera);
+        viewport.apply();
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
@@ -252,10 +248,10 @@ public class VictoryScreen implements Screen {
 
         // 1. Background: the live map like the main menu, else the image
         if (backdrop != null) {
-            backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
+            backdrop.renderDimmed(delta, shapeRenderer, viewport, BACKDROP_DIM);
         } else if (background != null) {
             batch.begin();
-            batch.draw(background, 0, 0, MENU_WIDTH, MENU_HEIGHT);
+            batch.draw(background, viewport.left(), viewport.bottom(), viewport.visibleWidth(), viewport.visibleHeight());
             batch.end();
         }
 
@@ -266,7 +262,7 @@ public class VictoryScreen implements Screen {
 
         if (backdrop == null && background == null) { // simple placeholder floor
             shapeRenderer.setColor(0.16f, 0.18f, 0.28f, 1f);
-            shapeRenderer.rect(0, 0, MENU_WIDTH, BASE_Y);
+            shapeRenderer.rect(viewport.left(), viewport.bottom(), viewport.visibleWidth(), BASE_Y - viewport.bottom());
         }
 
         // slot = podium position (by score order); place = shared rank, so tied players get the same block and label
@@ -440,7 +436,7 @@ public class VictoryScreen implements Screen {
         if (confirm) {
             leaving = true;
             game.audio().play(Audio.Sfx.UI_CONFIRM);
-            game.changeScreen(new MainMenuScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
+            game.changeScreen(new MainMenuScreen(game));
         }
     }
 

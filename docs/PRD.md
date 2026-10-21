@@ -12,7 +12,7 @@ Tumbalata is a 2D top-down arcade sports game for local multiplayer, built in Ja
 | Repository | github.com/leknatz-dev/tumbalata-main |
 | Language / stack | Java 21, LibGDX 1.14.2, gdx-controllers 2.2.4, Tiled (TMX) maps |
 | Build | Gradle wrapper 9.7.1, modules `core` and `lwjgl3` |
-| Platform | Desktop (LWJGL3), window starts at 700 x 500 and is resizable |
+| Platform | Desktop (LWJGL3) for now, window starts at 1280 x 720 and is resizable; Android next (every screen fits any shape) |
 | Players | 2 playable roles today (Thrower and Taya); 3P and 4P can be chosen but have no gameplay yet |
 | Screens | Main menu, player count, character select, game, victory |
 | Art status | Court, ring, walk sheets, buttons, title and transition are real; character cards and several headings are placeholders |
@@ -91,16 +91,16 @@ Players move forward through three menu screens into the game; the timer ends th
 
 &#91;embedded content: screen flow · 5 screens\]
 
-Every change goes through `TumbalataGame.changeScreen()`: the old screen's last frame is captured, the new screen is switched in underneath, and the can sheet sweeps across right to left. The old screen stays visible to the left of the can and the new screen appears behind it. The window is resized only after the sweep, and only if the player has not resized it.
+Every change goes through `TumbalataGame.changeScreen()`: the old screen's last frame is captured, the new screen is switched in underneath, and the can sheet sweeps across right to left. The old screen stays visible to the left of the can and the new screen appears behind it. One window for the whole game: screens fit themselves to it, so nothing resizes the window.
 
-| Screen | Class | Window / view | Notes |
+| Screen | Class | Layout / view | Notes |
 | --- | --- | --- | --- |
-| Main menu | `MainMenuScreen` | 700 x 500 | Live map background, title, Start and Exit with the slipper pointer |
-| Player count | `PlayerSelectScreen` | 700 x 500 | 3P and 4P buttons; passes the count on |
-| Player names | `NameEntryScreen` | 700 x 500 | One row per player. Keyboard: type, Enter = OK, Up/Down = row, Esc = back (the keyboard only types here). Pads: Up/Down = letter, Left/Right = move, A = OK, B = delete, Select = back. Names start blank every game (not kept); empty = "P1"... and used everywhere (tags, HUD, signs, victory, awards) |
-| Character select | `CharacterSelectScreen` | 700 x 500 | Four cards; name tags above the card each player is on |
-| Game | `GameScreen` | 1280 x 698 window, 1408 x 768 view | Match with a timer |
-| Victory | `VictoryScreen` | 700 x 500 | Podium: 2nd, 1st (middle, largest), 3rd, 4th; blocks rise, characters pop in |
+| Main menu | `MainMenuScreen` | 700 x 500, extended | Live map background, title, Start and Exit with the slipper pointer |
+| Player count | `PlayerSelectScreen` | 700 x 500, extended | 3P and 4P buttons; passes the count on |
+| Player names | `NameEntryScreen` | 700 x 500, extended | One row per player. Keyboard: type, Enter = OK, Up/Down = row, Esc = back (the keyboard only types here). Pads: Up/Down = letter, Left/Right = move, A = OK, B = delete, Select = back. Names start blank every game (not kept); empty = "P1"... and used everywhere (tags, HUD, signs, victory, awards) |
+| Character select | `CharacterSelectScreen` | 700 x 500, extended | Four cards; name tags above the card each player is on |
+| Game | `GameScreen` | 1408 x 768, letterboxed | Match with a timer |
+| Victory | `VictoryScreen` | 700 x 500, extended | Podium: 2nd, 1st (middle, largest), 3rd, 4th; blocks rise, characters pop in |
 
 ## Controls and input
 
@@ -212,9 +212,9 @@ The court art is bigger than the Tiled grid, and the whole game is built around 
 
 **Windows, viewports and scaling**
 
-- The window opens at 700 x 500 and is resizable. Menu screens use a 700 x 500 `FitViewport`; the game screen uses 1408 x 768. Letterbox bars appear when the window shape differs.
+- The window opens at 1280 x 720 (16:9, a phone on its side) and is resizable; every screen fits any size or shape, as on phones. Menu screens use `MenuViewport` (an `ExtendViewport`): the 700 x 500 layout stays centred and a wider or taller screen shows more of the live map around it, never bars. Full-screen things in a menu (background, dimming) cover `left()`, `bottom()`, `visibleWidth()` x `visibleHeight()`. The match uses a 1408 x 768 `FitViewport`, since the court art is that size: wider phones get thin dark bars at the sides.
 - The screen transition draws on its own camera over the whole window, so it also covers the bars.
-- `TumbalataGame` owns window sizing: it switches to 1280 x 698 for the game and back to 700 x 500 for menus, but only when the window is still at the size it set itself (not fullscreen, not maximized or resized by hand).
+- `TumbalataGame` never resizes the window (F11 fullscreen still works and comes back to the size the window had).
 - A decision is pending on moving the menus to 960 x 540 (16:9), which scales exactly 2x at 1920 x 1080 with no side bars. The game art stays 1408 x 768, which scales about 1.36x at 1080p.
 
 **Live menu background**
@@ -391,7 +391,7 @@ The `lwjgl3` run task uses the `assets` folder as its working directory. Gradle 
 **Modules**
 
 - `core`: all game code. Depends on LibGDX, gdx-controllers-core, box2d, freetype and box2dlights (box2d and freetype are declared but not used).
-- `lwjgl3`: desktop launcher (`Lwjgl3Launcher`, window 700 x 500, resizable, 4x MSAA) and the desktop controller backend.
+- `lwjgl3`: desktop launcher (`Lwjgl3Launcher`, window 1280 x 720, resizable, 4x MSAA) and the desktop controller backend.
 
 **Errors seen on the owner's machine and their fixes**
 
@@ -454,7 +454,7 @@ The goal is a phone game (Android first, iPhone later) played over the network: 
 | 3 | `MatchFlow` runs the whole match with no graphics: dialogue → mano → can spot → GAME START → play → GOOD JOB, the hit-stop freezes, and waits as long as the matching sign. The dialogue logic is `Dialogue` (`DialogueBox` only draws it). `GameScreen` runs the flow in fixed steps and draws, plays sounds and shows signs when the flow tells it to | Done |
 | 4 | Each match step, every player gives an `InputFrame` (stick + A, B, Start, packable into one int) from their `InputSource`; presses are worked out from the step before (`PlayerInput.apply`). `LocalInputSource` is this device; touch and the network will be other sources. Taps shorter than a step still count; buttons used by the pause menu don't. Same frames = same match (tested) | Done |
 | 5 | `Lobby` (held by `TumbalataGame`): one slot per player (name, character, locked in, which input slot on this device plays them) and the match settings (time, street events, character traits). The menus fill it in, the "each character once" rule lives in it, and `GameScreen` is made from it. It becomes the waiting room | Done |
-| 6 | A viewport that fits any phone screen shape (no window resizing) | Next |
+| 6 | One window that never resizes (1280 x 720 on desktop). Menus use `MenuViewport` (the 700 x 500 layout centred, the live map filling any extra width or height); the match is letterboxed. Checked at 16:9, a 2.17:1 phone and 4:3 | Done |
 
 Then: the server screen and waiting room over LAN, then the Android build with touch controls, then private room codes.
 

@@ -15,8 +15,6 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.ScreenUtils;
-import com.badlogic.gdx.utils.viewport.FitViewport;
-import com.badlogic.gdx.utils.viewport.Viewport;
 
 /**
  * "ENTER YOUR NAMES": one row per player, between the player count and the character select (placeholder look).
@@ -34,8 +32,6 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 public class NameEntryScreen implements Screen {
     private static final float MENU_WIDTH = 700f;
     private static final float MENU_HEIGHT = 500f;
-    private static final int MENU_WINDOW_W = 700;
-    private static final int MENU_WINDOW_H = 500;
     private static final float BACKDROP_DIM = 0.35f;
 
     private static final String LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
@@ -57,7 +53,7 @@ public class NameEntryScreen implements Screen {
     private int keyboardRow = 0;       // the row the keyboard types into
 
     private OrthographicCamera camera;
-    private Viewport viewport;
+    private MenuViewport viewport;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
     private BitmapFont font;
@@ -155,8 +151,8 @@ public class NameEntryScreen implements Screen {
         leaving = false;
         game.audio().playMusic(Audio.Track.MENU);
         camera = new OrthographicCamera();
-        viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
-        viewport.apply(true);
+        viewport = new MenuViewport(camera);
+        viewport.apply();
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
         font = Fonts.create();
@@ -176,7 +172,7 @@ public class NameEntryScreen implements Screen {
         batch.setProjectionMatrix(camera.combined);
         shapeRenderer.setProjectionMatrix(camera.combined);
         if (backdrop != null) {
-            backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
+            backdrop.renderDimmed(delta, shapeRenderer, viewport, BACKDROP_DIM);
         }
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
@@ -293,13 +289,13 @@ public class NameEntryScreen implements Screen {
     private void goBack() {
         leaving = true;
         game.audio().play(Audio.Sfx.UI_BACK);
-        game.changeScreen(new PlayerSelectScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
+        game.changeScreen(new PlayerSelectScreen(game));
     }
 
     private void startCharacterSelect() {
         leaving = true;
         for (int p = 0; p < playerCount; p++) game.lobby().setName(p, names[p].toString()); // blank = "P1"...
-        game.changeScreen(new CharacterSelectScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
+        game.changeScreen(new CharacterSelectScreen(game));
     }
 
     @Override

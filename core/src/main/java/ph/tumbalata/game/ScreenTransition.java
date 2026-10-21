@@ -99,7 +99,7 @@ public class ScreenTransition {
         snapshot = ScreenUtils.getFrameBufferTexture();
     }
 
-    /** Starts the sweep. onFinished runs once when it ends (the game resizes the window there). */
+    /** Starts the sweep. onFinished (may be null) runs once when it ends. */
     public void begin(Runnable onFinished) {
         this.onFinished = onFinished;
         this.active = true;

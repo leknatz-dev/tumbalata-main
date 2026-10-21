@@ -15,8 +15,6 @@ import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.ScreenUtils;
-import com.badlogic.gdx.utils.viewport.FitViewport;
-import com.badlogic.gdx.utils.viewport.Viewport;
 
 /**
  * "Choose your character" screen: 4 placeholder cards. Every player moves their own cursor with their own pad or keys
@@ -28,10 +26,6 @@ public class CharacterSelectScreen implements Screen {
     // --- SCREEN SIZE (same as the other menus) ---
     private static final float MENU_WIDTH = 700f;
     private static final float MENU_HEIGHT = 500f;
-    private static final int MENU_WINDOW_W = 700;
-    private static final int MENU_WINDOW_H = 500;
-    private static final int GAME_WINDOW_W = 1280;
-    private static final int GAME_WINDOW_H = 698;
 
     // --- ASSET FILES (optional - placeholders are drawn if missing) ---
     private static final String BACKGROUND_FILE = "menu_background.png";
@@ -69,7 +63,7 @@ public class CharacterSelectScreen implements Screen {
     private final float[] tagWidths; // each name tag fits its name
 
     private OrthographicCamera camera;
-    private Viewport viewport;
+    private MenuViewport viewport;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
     private BitmapFont font;
@@ -137,8 +131,8 @@ public class CharacterSelectScreen implements Screen {
         game.audio().playMusic(Audio.Track.MENU); // keeps playing if it already is
 
         camera = new OrthographicCamera();
-        viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
-        viewport.apply(true);
+        viewport = new MenuViewport(camera);
+        viewport.apply();
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
@@ -185,7 +179,7 @@ public class CharacterSelectScreen implements Screen {
 
         // Live background (the map with the 4 characters walking around)
         if (backdrop != null) {
-            backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
+            backdrop.renderDimmed(delta, shapeRenderer, viewport, BACKDROP_DIM);
         }
 
         Rectangle sel = cardBounds[card(0)];
@@ -197,7 +191,7 @@ public class CharacterSelectScreen implements Screen {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         if (backdrop == null && background == null) {
             shapeRenderer.setColor(0.18f, 0.35f, 0.25f, 1f);
-            shapeRenderer.rect(0, 0, MENU_WIDTH, MENU_HEIGHT);
+            shapeRenderer.rect(viewport.left(), viewport.bottom(), viewport.visibleWidth(), viewport.visibleHeight());
         }
         for (int i = 0; i < Characters.COUNT; i++) {
             Rectangle r = cardBounds[i];
@@ -232,7 +226,7 @@ public class CharacterSelectScreen implements Screen {
 
         // --- Sprites and text ---
         batch.begin();
-        if (backdrop == null && background != null) batch.draw(background, 0, 0, MENU_WIDTH, MENU_HEIGHT);
+        if (backdrop == null && background != null) batch.draw(background, viewport.left(), viewport.bottom(), viewport.visibleWidth(), viewport.visibleHeight());
 
         float headingBob = MathUtils.sin(time * HEADING_BOB_SPEED) * HEADING_BOB_AMOUNT;
         if (headingTexture != null) {
@@ -406,7 +400,7 @@ public class CharacterSelectScreen implements Screen {
         if (back) {
             leaving = true;
             game.audio().play(Audio.Sfx.UI_BACK);
-            game.changeScreen(new NameEntryScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
+            game.changeScreen(new NameEntryScreen(game));
             return;
         }
 
@@ -437,7 +431,7 @@ public class CharacterSelectScreen implements Screen {
 
     private void startGame() {
         leaving = true;
-        game.changeScreen(new GameScreen(lobby), GAME_WINDOW_W, GAME_WINDOW_H);
+        game.changeScreen(new GameScreen(lobby));
     }
 
     @Override

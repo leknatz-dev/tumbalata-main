@@ -10,7 +10,6 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TmxMapLoader;
 import com.badlogic.gdx.maps.tiled.renderers.OrthogonalTiledMapRenderer;
-import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
@@ -35,6 +34,7 @@ public class MenuBackdrop {
     private static final float CAMERA_X = 704f;      // center of the art
     private static final float CAMERA_Y = 320f;
     private static final float ZOOM = 1.5f;          // 1 = pixel for pixel, bigger = shows more of the map
+    private static final float ART_W = 1408f;        // the map art: a wide screen never shows past its sides
 
     // --- CHARACTERS ---
     private static final float SPRITE_SIZE = 48f;
@@ -151,20 +151,28 @@ public class MenuBackdrop {
     }
 
     /**
-     * Draws the live background, then a dark layer over it so the menu UI stays readable, then restores the
-     * caller's projection. Call this first in a menu screen's render().
+     * Draws the live background over the whole screen the menu shows, then a dark layer over it so the menu UI stays
+     * readable, then restores the menu's projection. Call this first in a menu screen's render().
      */
-    public void renderDimmed(float delta, ShapeRenderer shapes, Matrix4 uiProjection, float screenW, float screenH, float dim) {
+    public void renderDimmed(float delta, ShapeRenderer shapes, MenuViewport view, float dim) {
+        fitTo(view.visibleWidth(), view.visibleHeight());
         render(delta, shapes);
 
-        shapes.setProjectionMatrix(uiProjection); // the backdrop used its own camera
+        shapes.setProjectionMatrix(view.getCamera().combined); // the backdrop used its own camera
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         shapes.begin(ShapeRenderer.ShapeType.Filled);
         shapes.setColor(0f, 0f, 0f, dim);
-        shapes.rect(0, 0, screenW, screenH);
+        shapes.rect(view.left(), view.bottom(), view.visibleWidth(), view.visibleHeight());
         shapes.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
+    /** Shows the map at the screen's shape: wider screens see more of it, zoomed in just enough to stay on the art. */
+    private void fitTo(float menuW, float menuH) {
+        mapCamera.viewportWidth = menuW;
+        mapCamera.viewportHeight = menuH;
+        mapCamera.zoom = Math.min(ZOOM, ART_W / menuW);
     }
 
     public void dispose() {

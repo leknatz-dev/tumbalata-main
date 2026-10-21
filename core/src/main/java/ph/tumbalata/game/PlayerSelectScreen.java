@@ -15,17 +15,11 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.ScreenUtils;
-import com.badlogic.gdx.utils.viewport.FitViewport;
-import com.badlogic.gdx.utils.viewport.Viewport;
 
 public class PlayerSelectScreen implements Screen {
     private static final float MENU_WIDTH = 700f;
     private static final float MENU_HEIGHT = 500f;
 
-    private static final int MENU_WINDOW_W = 700;
-    private static final int MENU_WINDOW_H = 500;
-    private static final int GAME_WINDOW_W = 1280;
-    private static final int GAME_WINDOW_H = 698;
 
     private static final String BACKGROUND_FILE = "menu_background.png";
     // One button per choice. A missing image (2p_button.png does not exist yet) draws a labelled placeholder.
@@ -57,7 +51,7 @@ public class PlayerSelectScreen implements Screen {
     private final TumbalataGame game;
 
     private OrthographicCamera camera;
-    private Viewport viewport;
+    private MenuViewport viewport;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
     private ControlHints hints;
@@ -95,8 +89,8 @@ public class PlayerSelectScreen implements Screen {
         game.audio().playMusic(Audio.Track.MENU); // keeps playing if it already is
 
         camera = new OrthographicCamera();
-        viewport = new FitViewport(MENU_WIDTH, MENU_HEIGHT, camera);
-        viewport.apply(true);
+        viewport = new MenuViewport(camera);
+        viewport.apply();
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
@@ -135,7 +129,7 @@ public class PlayerSelectScreen implements Screen {
 
         // Live background (the map with the 4 characters walking around)
         if (backdrop != null) {
-            backdrop.renderDimmed(delta, shapeRenderer, camera.combined, MENU_WIDTH, MENU_HEIGHT, BACKDROP_DIM);
+            backdrop.renderDimmed(delta, shapeRenderer, viewport, BACKDROP_DIM);
         }
 
         Rectangle sel = selected == TOGGLE ? toggleBounds : buttonBounds[selected];
@@ -147,7 +141,7 @@ public class PlayerSelectScreen implements Screen {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
             if (backdrop == null && background == null) {
                 shapeRenderer.setColor(0.18f, 0.35f, 0.25f, 1f);
-                shapeRenderer.rect(0, 0, MENU_WIDTH, MENU_HEIGHT);
+                shapeRenderer.rect(viewport.left(), viewport.bottom(), viewport.visibleWidth(), viewport.visibleHeight());
             }
             shapeRenderer.setColor(Color.DARK_GRAY);
             for (int i = 0; i < buttonBounds.length; i++) {
@@ -174,7 +168,7 @@ public class PlayerSelectScreen implements Screen {
 
         batch.begin();
 
-        if (backdrop == null && background != null) batch.draw(background, 0, 0, MENU_WIDTH, MENU_HEIGHT);
+        if (backdrop == null && background != null) batch.draw(background, viewport.left(), viewport.bottom(), viewport.visibleWidth(), viewport.visibleHeight());
 
         layout.setText(font, "STREET EVENTS");
         font.draw(batch, "STREET EVENTS", toggleBounds.x + 14f, toggleBounds.y + (toggleBounds.height + layout.height) / 2f);
@@ -239,7 +233,7 @@ public class PlayerSelectScreen implements Screen {
             leaving = true;
             game.audio().play(Audio.Sfx.UI_BACK);
             if (game != null) {
-                game.changeScreen(new MainMenuScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
+                game.changeScreen(new MainMenuScreen(game));
             }
             return;
         }
@@ -279,7 +273,7 @@ public class PlayerSelectScreen implements Screen {
         game.audio().play(Audio.Sfx.UI_CONFIRM);
         if (game != null) {
             game.lobby().reset(playerCount); // new players: names blank, nobody picked yet
-            game.changeScreen(new NameEntryScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
+            game.changeScreen(new NameEntryScreen(game));
         }
     }
 

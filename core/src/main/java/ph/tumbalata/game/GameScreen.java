@@ -54,10 +54,6 @@ public class GameScreen implements Screen {
     // Centre of the court's centre circle in the art (world units): the can's base when the map has no "can base" layer
     private static final float COURT_CENTRE_X = 704f;
     private static final float COURT_CENTRE_Y = 177f;
-    private static final int VICTORY_WINDOW_W = 700;
-    private static final int VICTORY_WINDOW_H = 500;
-    private static final int MENU_WINDOW_W = 700;
-    private static final int MENU_WINDOW_H = 500;
 
     // --- PAUSE / SETTINGS MENU (Select or Start on a pad, Esc or P on the keyboard) ---
     private static final float PAUSE_FADE_SECONDS = 0.2f; // blur and panel fade in / out
@@ -1045,7 +1041,7 @@ public class GameScreen implements Screen {
                 exiting = true;
                 audio.play(Audio.Sfx.UI_BACK);
                 audio.playBackgroundMusic(null);
-                game.changeScreen(new MainMenuScreen(game), MENU_WINDOW_W, MENU_WINDOW_H);
+                game.changeScreen(new MainMenuScreen(game));
                 break;
         }
     }
@@ -1094,8 +1090,7 @@ public class GameScreen implements Screen {
     private void endMatch() {
         if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
             TumbalataGame tumbalata = (TumbalataGame) Gdx.app.getApplicationListener();
-            tumbalata.changeScreen(new VictoryScreen(tumbalata, match.scores(), characters, names, Awards.compute(match.stats())),
-                VICTORY_WINDOW_W, VICTORY_WINDOW_H);
+            tumbalata.changeScreen(new VictoryScreen(tumbalata, match.scores(), characters, names, Awards.compute(match.stats())));
         }
     }
 

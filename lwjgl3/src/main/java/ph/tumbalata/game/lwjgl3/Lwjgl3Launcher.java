@@ -14,8 +14,8 @@ public class Lwjgl3Launcher {
     public static void main(String[] args) {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("Tumbalata");
-        config.setWindowedMode(700, 500);
-        config.setResizable(true); // Ensures seamless viewport stretching in fullscreen/maximized
+        config.setWindowedMode(1280, 720); // landscape 16:9, like a phone on its side; every screen fits any size
+        config.setResizable(true); // any size or shape: try a phone shape by resizing the window
         config.setBackBufferConfig(8, 8, 8, 8, 16, 0, 4);
 
         new Lwjgl3Application(new TumbalataGame(Lwjgl3Launcher::loadExtraPadMappings), config);
