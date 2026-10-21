@@ -69,7 +69,7 @@ public class Match {
 
     private static final float TOSS_IMPACT_DELAY = 0.6f; // seconds between Taya's can hitting a slipper and the swap
     /** After a missed toss, Taya can't pick the can up for this long: the Throwers' head start for their slippers. */
-    public static final float CAN_LOCK_AFTER_MISS = 3f;
+    public static final float CAN_LOCK_AFTER_MISS = 1f;
 
     // --- SPAWNS (relative to the throw line / can base). Waiting Throwers stand behind the first one. ---
     private static final float THROWER_SPAWN_BEHIND_LINE = 50f;

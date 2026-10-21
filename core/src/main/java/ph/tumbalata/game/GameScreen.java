@@ -53,7 +53,7 @@ public class GameScreen implements Screen {
     // Centre of the court's centre circle in the art (world units): the can's base when the map has no "can base" layer
     private static final float COURT_CENTRE_X = 704f;
     private static final float COURT_CENTRE_Y = 177f;
-    private static final float MATCH_TIME_SECONDS = 30f;
+    private static final float MATCH_TIME_SECONDS = 360f;
     private static final int VICTORY_WINDOW_W = 700;
     private static final int VICTORY_WINDOW_H = 500;
     private static final int MENU_WINDOW_W = 700;
