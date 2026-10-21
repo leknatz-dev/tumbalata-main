@@ -48,6 +48,7 @@ public class TumbalataGame extends Game {
 
     private static boolean isMenuScreen(Screen screen) {
         return screen instanceof MainMenuScreen
+            || screen instanceof ServerScreen
             || screen instanceof WaitingRoomScreen
             || screen instanceof NameEntryScreen
             || screen instanceof CharacterSelectScreen
@@ -83,6 +84,13 @@ public class TumbalataGame extends Game {
 
     public Lobby lobby() {
         return lobby;
+    }
+
+    // Hosting a room on the Wi-Fi, or in someone else's. One for the whole game, so the room stays open across screens.
+    private final Network network = new Network();
+
+    public Network network() {
+        return network;
     }
 
     @Override
@@ -158,6 +166,7 @@ public class TumbalataGame extends Game {
 
     @Override
     public void dispose() {
+        network.close();
         if (transition != null) transition.dispose();
         if (input != null) input.dispose();
         if (audio != null) audio.dispose();

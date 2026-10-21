@@ -16,14 +16,23 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.ScreenUtils;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.util.Arrays;
+
+import ph.tumbalata.game.net.ClientSession;
+import ph.tumbalata.game.net.HostSession;
+
 /**
  * The waiting room (the game's {@link Lobby}): the players in the room on the left, the host's match settings on the
  * right. The host (Player 1) sets the room size, match time, street events and character traits, can open NAMES, and
  * presses START once the room is full; then everyone picks a character. After a match everyone comes back here.
  *
- * <p>For now everyone is on this device: other players join by pressing A on their own keys or pad and leave with B
- * (on phones, joining will be over the network instead). The host uses Player 1's keys / pad or the mouse; B or Esc
- * closes the room.
+ * <p>The host's device keeps the real room; phones that join over the Wi-Fi (from the {@link ServerScreen}) appear in
+ * it and get a copy, sent again whenever it changes. On a phone in someone else's room the settings only show, and B
+ * leaves. On the host's device other players can also join by pressing A on their own keys or pad (B to leave), for
+ * testing on one computer. The host uses Player 1's keys / pad or the mouse; B or Esc closes the room.
  */
 public class WaitingRoomScreen implements Screen {
     private static final float MENU_WIDTH = MenuViewport.WIDTH;
@@ -43,6 +52,8 @@ public class WaitingRoomScreen implements Screen {
 
     private final TumbalataGame game;
     private final Lobby lobby;
+    private final Network network;
+    private byte[] lastSent; // the room as the phones last got it (sent again when it changes)
 
     private OrthographicCamera camera;
     private MenuViewport viewport;
@@ -65,8 +76,13 @@ public class WaitingRoomScreen implements Screen {
     public WaitingRoomScreen(TumbalataGame game) {
         this.game = game;
         this.lobby = game.lobby();
-        if (lobby.size() == 0) lobby.join(0); // a new room: the host is in it
-        lobby.unlockAll();
+        this.network = game.network();
+        if (!network.isClient()) {
+            if (lobby.size() == 0) lobby.join(0); // a new room: the host is in it
+            lobby.unlockAll();
+        } else {
+            selected = -1; // a phone in someone else's room: the settings only show
+        }
         float y = ROWS_TOP;
         for (int i = 0; i < ITEMS.length; i++) {
             float h = ITEMS[i] == Item.START ? START_H : SETTING_H;
@@ -98,6 +114,12 @@ public class WaitingRoomScreen implements Screen {
         InputManager input = game.input();
         if (input.menu().fullscreen) game.toggleFullscreen();
         messageTime = Math.max(0f, messageTime - delta);
+        if (network.isHosting()) pollPhones();
+        if (network.isClient()) {
+            pollHost();
+            if (!leaving && !input.isMenuLocked()) clientInput(input);
+            return;
+        }
         if (leaving || input.isMenuLocked()) return;
 
         // Players on this device join with A and leave with B. A key Player 1 shares (Space, E) doesn't count, so
@@ -140,6 +162,92 @@ public class WaitingRoomScreen implements Screen {
             activate(ITEMS[hovered]);
         }
         if (selected != before) game.audio().play(Audio.Sfx.UI_MOVE);
+    }
+
+    // ------------------------------------------------------------------
+    // The network
+    // ------------------------------------------------------------------
+
+    /** Host: phones that joined or left. */
+    private void pollPhones() {
+        HostSession host = network.host();
+        for (HostSession.Event e = host.poll(); e != null; e = host.poll()) {
+            if (e.kind == HostSession.Event.Kind.JOINED) {
+                if (leaving) { // already off to the match: too late to join
+                    host.reject(e.connection, "THE MATCH IS STARTING");
+                } else if (lobby.joinRemote(e.connection, e.name) == null) {
+                    host.reject(e.connection, "THE ROOM IS FULL");
+                } else {
+                    game.audio().play(Audio.Sfx.UI_CONFIRM);
+                }
+            } else {
+                Lobby.Slot slot = lobby.slotForConnection(e.connection);
+                if (slot != null) {
+                    lobby.leave(slot.id());
+                    game.audio().play(Audio.Sfx.UI_BACK);
+                }
+            }
+        }
+    }
+
+    /** Host: sends the phones the room whenever it changed, and keeps room searches up to date. */
+    private void syncPhones() {
+        if (!network.isHosting() || lobby.size() == 0) return;
+        network.host().setRoomInfo(lobby.slot(0).name(), lobby.size(), lobby.settings.roomSize);
+        byte[] now;
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            lobby.writeTo(new DataOutputStream(bytes));
+            now = bytes.toByteArray();
+        } catch (IOException e) {
+            return; // writing to memory doesn't fail
+        }
+        if (Arrays.equals(now, lastSent)) return;
+        lastSent = now;
+        for (int i = 0; i < lobby.size(); i++) { // index loop: sending the room loops over the players too
+            Lobby.Slot s = lobby.slot(i);
+            if (s.connection() >= 0) network.host().sendLobby(s.connection(), lobby, s.id());
+        }
+    }
+
+    /** A phone in someone else's room: the room as the host has it, or why we're out. */
+    private void pollHost() {
+        ClientSession client = network.client();
+        for (ClientSession.Event e = client.poll(); e != null; e = client.poll()) {
+            switch (e.kind) {
+                case LOBBY:
+                    try {
+                        network.setMyId(e.applyTo(lobby));
+                    } catch (IOException bad) {
+                        backToServerScreen("THE ROOM SENT SOMETHING ODD");
+                        return;
+                    }
+                    break;
+                case REJECTED:
+                    backToServerScreen(e.reason);
+                    return;
+                case CLOSED:
+                    backToServerScreen("THE HOST CLOSED THE ROOM");
+                    return;
+            }
+        }
+    }
+
+    /** A phone in someone else's room: B or Esc leaves. */
+    private void clientInput(InputManager input) {
+        PlayerInput in = input.player(0);
+        if (in.bPressed || in.selectPressed || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+            game.audio().play(Audio.Sfx.UI_BACK);
+            backToServerScreen(null);
+        }
+    }
+
+    private void backToServerScreen(String why) {
+        if (leaving) return;
+        leaving = true;
+        network.close();
+        lobby.clear();
+        game.changeScreen(new ServerScreen(game, why));
     }
 
     /** Left / right on a setting. */
@@ -193,6 +301,10 @@ public class WaitingRoomScreen implements Screen {
                 change(item, 1);
                 break;
             case NAMES:
+                if (lobby.hasRemotePlayers()) {
+                    say("EACH PHONE SETS ITS OWN NAME", Audio.Sfx.UI_DENY);
+                    return;
+                }
                 leaving = true;
                 game.audio().play(Audio.Sfx.UI_CONFIRM);
                 game.changeScreen(new NameEntryScreen(game));
@@ -202,6 +314,10 @@ public class WaitingRoomScreen implements Screen {
                     say("WAITING FOR " + (lobby.settings.roomSize - lobby.size()) + " MORE", Audio.Sfx.UI_DENY);
                     return;
                 }
+                if (lobby.hasRemotePlayers()) { // the character select and the match over Wi-Fi come next
+                    say("PLAYING OVER WI-FI IS COMING IN THE NEXT UPDATE", Audio.Sfx.UI_DENY);
+                    return;
+                }
                 leaving = true;
                 game.audio().play(Audio.Sfx.UI_CONFIRM);
                 game.changeScreen(new CharacterSelectScreen(game));
@@ -209,11 +325,10 @@ public class WaitingRoomScreen implements Screen {
         }
     }
 
+    /** Host: closes the room (the phones in it are told) and goes back to the server screen. */
     private void closeRoom() {
-        leaving = true;
-        lobby.clear();
         game.audio().play(Audio.Sfx.UI_BACK);
-        game.changeScreen(new MainMenuScreen(game));
+        backToServerScreen(null);
     }
 
     private void say(String text, Audio.Sfx sound) {
@@ -254,7 +369,10 @@ public class WaitingRoomScreen implements Screen {
         float bob = MathUtils.sin(time * 2.5f) * 4f;
         text("WAITING ROOM", 0f, TITLE_Y + bob, 2.4f, Color.WHITE, Align.center, MENU_WIDTH);
         boolean full = lobby.isFull();
-        String count = full ? "ROOM FULL! THE HOST CAN START" : lobby.size() + " / " + lobby.settings.roomSize + " PLAYERS";
+        String count;
+        if (network.isClient() && network.myId() < 0) count = "JOINING...";
+        else if (network.isClient()) count = "HOST: " + lobby.slot(0).name() + "   " + lobby.size() + " / " + lobby.settings.roomSize;
+        else count = full ? "ROOM FULL! THE HOST CAN START" : lobby.size() + " / " + lobby.settings.roomSize + " PLAYERS";
         text(count, 0f, COUNT_Y, 1.2f, full ? Color.GOLD : Color.LIGHT_GRAY, Align.center, MENU_WIDTH);
         drawPlayerRowText();
         drawSettingText();
@@ -263,9 +381,14 @@ public class WaitingRoomScreen implements Screen {
         }
         batch.end();
 
-        hints.draw(batch, shapes, font, MENU_WIDTH / 2f, HINT_Y, 0.9f,
-            ControlHints.Icon.DPAD_UP_DOWN, "CHOOSE", ControlHints.Icon.DPAD_LEFT_RIGHT, "CHANGE",
-            ControlHints.Icon.A, "OK", ControlHints.Icon.B, "LEAVE");
+        if (network.isClient()) {
+            hints.draw(batch, shapes, font, MENU_WIDTH / 2f, HINT_Y, 0.9f, ControlHints.Icon.B, "LEAVE THE ROOM");
+        } else {
+            hints.draw(batch, shapes, font, MENU_WIDTH / 2f, HINT_Y, 0.9f,
+                ControlHints.Icon.DPAD_UP_DOWN, "CHOOSE", ControlHints.Icon.DPAD_LEFT_RIGHT, "CHANGE",
+                ControlHints.Icon.A, "OK", ControlHints.Icon.B, "CLOSE ROOM");
+        }
+        syncPhones(); // the phones get the room as it is now
     }
 
     private float playerRowY(int i) {
@@ -292,12 +415,16 @@ public class WaitingRoomScreen implements Screen {
             if (in) {
                 Lobby.Slot s = lobby.slot(i);
                 text(s.name(), PLAYER_X + 66f, mid + 11f, 1.6f, Color.WHITE, Align.left, 0f);
-                if (s.isHost()) text("HOST", PLAYER_X + PLAYER_W - 10f, mid + 7f, 1f, Color.GOLD, Align.right, 0f);
+                String tag = network.isClient() && i == network.myId() ? "YOU"
+                    : s.isHost() ? "HOST" : network.isHosting() && s.isRemote() ? "PHONE" : null;
+                if (tag != null) {
+                    text(tag, PLAYER_X + PLAYER_W - 10f, mid + 7f, 1f, tag.equals("PHONE") ? Color.SKY : Color.GOLD, Align.right, 0f);
+                }
             } else {
                 float pulse = 0.5f + 0.5f * MathUtils.sin(time * 4f + i);
                 text("WAITING...", PLAYER_X + 66f, mid + 11f, 1.4f, new Color(0.75f, 0.75f, 0.75f, 0.5f + 0.4f * pulse),
                     Align.left, 0f);
-                text("PRESS A TO JOIN", PLAYER_X + PLAYER_W - 10f, mid + 6f, 0.85f, Color.GRAY, Align.right, 0f);
+                if (!network.isClient()) text("PRESS A TO JOIN", PLAYER_X + PLAYER_W - 10f, mid + 6f, 0.85f, Color.GRAY, Align.right, 0f);
             }
         }
     }
@@ -311,7 +438,7 @@ public class WaitingRoomScreen implements Screen {
                 shapes.rect(r.x - 3f, r.y - 3f, r.width + 6f, r.height + 6f);
             }
             if (ITEMS[i] == Item.START) {
-                boolean ready = lobby.isFull();
+                boolean ready = lobby.isFull() && !network.isClient();
                 shapes.setColor(ready ? 0.2f : 0.25f, ready ? 0.65f : 0.25f, ready ? 0.3f : 0.27f, 0.95f);
             } else {
                 shapes.setColor(0f, 0f, 0f, 0.7f);
@@ -327,8 +454,10 @@ public class WaitingRoomScreen implements Screen {
             float mid = r.y + r.height / 2f;
             Item item = ITEMS[i];
             if (item == Item.START) {
-                String label = lobby.isFull() ? "START" : "WAITING " + lobby.size() + "/" + s.roomSize;
-                text(label, r.x, mid + 13f, 2f, lobby.isFull() ? Color.WHITE : Color.LIGHT_GRAY, Align.center, r.width);
+                String label = network.isClient() ? "THE HOST STARTS"
+                    : lobby.isFull() ? "START" : "WAITING " + lobby.size() + "/" + s.roomSize;
+                boolean bright = lobby.isFull() && !network.isClient();
+                text(label, r.x, mid + 13f, network.isClient() ? 1.6f : 2f, bright ? Color.WHITE : Color.LIGHT_GRAY, Align.center, r.width);
                 continue;
             }
             if (item == Item.NAMES) {
@@ -344,7 +473,8 @@ public class WaitingRoomScreen implements Screen {
             }
             text(label, r.x + 12f, mid + 9f, 1.2f, Color.LIGHT_GRAY, Align.left, 0f);
             Color valueColor = "OFF".equals(value) ? Color.SALMON : Color.WHITE;
-            text("<  " + value + "  >", r.x + r.width - 12f, mid + 10f, 1.4f, valueColor, Align.right, 0f);
+            String shown = network.isClient() ? value : "<  " + value + "  >"; // only the host can change them
+            text(shown, r.x + r.width - 12f, mid + 10f, 1.4f, valueColor, Align.right, 0f);
         }
     }
 

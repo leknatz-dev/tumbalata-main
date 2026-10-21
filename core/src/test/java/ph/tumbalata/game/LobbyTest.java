@@ -117,6 +117,19 @@ class LobbyTest {
     }
 
     @Test
+    void theRoomCanBeSentWhileGoingThroughThePlayers() throws Exception {
+        // The host sends each phone the room inside a loop over the players: that must not break the loop
+        Lobby lobby = lobby(3);
+        int sent = 0;
+        for (Lobby.Slot s : lobby.slots()) {
+            lobby.writeTo(new java.io.DataOutputStream(new java.io.ByteArrayOutputStream()));
+            lobby.lockedBy(s.character());
+            sent++;
+        }
+        assertEquals(3, sent);
+    }
+
+    @Test
     void resetKeepsTheSettingsAndChecksTheCount() {
         Lobby lobby = lobby(2);
         lobby.settings.matchSeconds = 120f;

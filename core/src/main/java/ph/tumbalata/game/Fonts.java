@@ -15,6 +15,8 @@ import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
  * <p>The screens use in-between scales (0.6, 1.2, 1.5...), which make a small sharp pixel font drop or double pixel
  * rows. So the glyphs are made {@link #SUPERSAMPLE} times bigger and shrunk smoothly (mipmaps), while very big text
  * (the signs) is enlarged with hard pixel edges. Falls back to libGDX's default font if the file is missing.
+ *
+ * <p>Pixelta has no apostrophe: on-screen text avoids it ("COULD NOT", not "COULDN'T").
  */
 public final class Fonts {
     private Fonts() {}

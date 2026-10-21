@@ -87,7 +87,7 @@ The 2-player game loop and all menu screens work. The newest piece, the 4-slot c
 
 ## Screens and game flow
 
-Main menu → **waiting room** → character select → match → victory → **back to the waiting room** (same players and settings) for the next match. Leaving the waiting room (B / Esc) closes the room and goes back to the main menu. Names are set from the waiting room (NAMES), which comes back to it. Later a server screen (host or join a LAN game) goes between the main menu and the waiting room.
+Main menu → **server screen** (your name, host a game or join one on the Wi-Fi) → **waiting room** → character select → match → victory → **back to the waiting room** (same players and settings) for the next match. Leaving the waiting room (B / Esc) closes the room (or, on a phone, leaves it) and goes back to the server screen. Names are set from the waiting room (NAMES), which comes back to it.
 
 &#91;embedded content: screen flow · 5 screens\]
 
@@ -96,7 +96,8 @@ Every change goes through `TumbalataGame.changeScreen()`: the old screen's last 
 | Screen | Class | Layout / view | Notes |
 | --- | --- | --- | --- |
 | Main menu | `MainMenuScreen` | 700 x 500, extended | Live map background, title, Start and Exit with the slipper pointer |
-| Waiting room | `WaitingRoomScreen` | 700 x 500, extended | The `Lobby`: players in the room on the left (HOST, or "WAITING... PRESS A TO JOIN"), the host's settings on the right: PLAYERS (room size 2-4, never below the players in), TIME (1-10 min), STREET EVENTS, TRAITS, NAMES, and START (only when the room is full). For now players join on this device with A on their own keys / pad and leave with B; a key Player 1 shares (Space, E) doesn't count. The host uses Player 1's keys / pad or the mouse; B or Esc closes the room |
+| Server | `ServerScreen` | 700 x 500, extended | YOUR NAME (saved; a phone opens its keyboard, a computer types after A and saves with Enter), HOST A GAME, and ROOMS ON THIS WI-FI (found while the screen is open; FULL or JOIN). See Playing on the same Wi-Fi |
+| Waiting room | `WaitingRoomScreen` | 700 x 500, extended | The `Lobby`: players in the room on the left (HOST, or "WAITING... PRESS A TO JOIN"); on the host, PHONE marks a player on another device, and a phone marks its own row YOU and sees the settings without arrows, the host's settings on the right: PLAYERS (room size 2-4, never below the players in), TIME (1-10 min), STREET EVENTS, TRAITS, NAMES, and START (only when the room is full). For now players join on this device with A on their own keys / pad and leave with B; a key Player 1 shares (Space, E) doesn't count. The host uses Player 1's keys / pad or the mouse; B or Esc closes the room |
 | Player names | `NameEntryScreen` | 700 x 500, extended | One row per player. Opened from the waiting room with NAMES, each row starting with the current name; when everyone is ready the names are saved and it goes back (Esc goes back without saving). Keyboard: type, Enter = OK, Up/Down = row, Esc = back (the keyboard only types here). Pads: Up/Down = letter, Left/Right = move, A = OK, B = delete, Select = back. Names start blank every game (not kept); empty = "P1"... and used everywhere (tags, HUD, signs, victory, awards) |
 | Character select | `CharacterSelectScreen` | 700 x 500, extended | Four cards; name tags above the card each player is on |
 | Game | `GameScreen` | 1408 x 768, letterboxed | Match with a timer |
@@ -371,6 +372,18 @@ Every file below is a synthesized **placeholder** (made by `tools/GenPlaceholder
 | `music/game` | Looping during the match (fades out at time up) |
 | `music/victory` | Looping on the victory screen |
 
+## Playing on the same Wi-Fi
+
+Phones (and computers) on the same Wi-Fi play together with plain Java sockets, which work the same on desktop and Android (package `ph.tumbalata.game.net`, no extra library):
+
+- **Finding rooms:** the server screen keeps sending `TUMBALATA?` as a UDP broadcast to port **54777** (`LanDiscovery`). Every host answers with its room: protocol version, TCP port, players, room size and the host's name. A host on the same computer shows up too.
+- **Joining:** the phone connects to the host over TCP port **54555** (`ClientSession`) and says hello with the protocol version and the player's name. A phone on another version, or one joining a full room, is turned away with a reason.
+- **The room:** the host's device keeps the real `Lobby` (`HostSession` + `WaitingRoomScreen`). Whenever it changes, every phone gets a copy along with which player it is (`Lobby.writeTo` / `readFrom`). A phone that disconnects leaves the room. When the host closes it, the phones go back to the server screen ("THE HOST CLOSED THE ROOM").
+- **Threads:** the network runs on its own threads and hands what happened to the game thread as events (`poll()`), so the lobby is only touched on the game thread.
+- **Messages:** an int length, a type byte, then the message. `Protocol.VERSION` goes up whenever they change.
+- **Testing on one computer:** run the game twice. One hosts, the other finds the room under ROOMS ON THIS WI-FI. Windows may ask once to let Java use the network.
+- **Not yet:** the character select and the match over the Wi-Fi (START says so when a phone is in the room). Android will also need the `INTERNET` and `CHANGE_WIFI_MULTICAST_STATE` permissions.
+
 ## Build, run and environment
 
 **Requirements**
@@ -456,7 +469,7 @@ The goal is a phone game (Android first, iPhone later) played over the network: 
 | 5 | `Lobby` (held by `TumbalataGame`): one slot per player (name, character, locked in, which input slot on this device plays them) and the match settings (time, street events, character traits). The menus fill it in, the "each character once" rule lives in it, and `GameScreen` is made from it. It becomes the waiting room | Done |
 | 6 | One window that never resizes (1280 x 720 on desktop). Menus use `MenuViewport` (the 700 x 500 layout centred, the live map filling any extra width or height); the match is letterboxed. Checked at 16:9, a 2.17:1 phone and 4:3 | Done |
 
-Then: the waiting room (done, on this device for now), the server screen with LAN host / join, then the Android build with touch controls, then private room codes.
+Then: the waiting room (done), the server screen with LAN host / join and a waiting room in sync on every phone (done), the character select and the match over the Wi-Fi, then the Android build with touch controls, then private room codes.
 
 ## Earlier roadmap (desktop, controllers)
 

@@ -2,6 +2,10 @@ package ph.tumbalata.game;
 
 import com.badlogic.gdx.utils.Array;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
 /**
  * The waiting room: the players in it, one {@link Slot} each (name, character, locked in, where their input comes
  * from), and the host's match {@link Settings}. Players join and leave; when the room is full the host can start.
@@ -12,6 +16,8 @@ import com.badlogic.gdx.utils.Array;
  * up. The rules for picking live here too: each character can be locked in by one player only.
  */
 public final class Lobby {
+    // Loops over the players use indexes, never for-each: libGDX Arrays share one iterator, so a for-each over the
+    // players while another runs (sending the room while going through the players) would break.
     public static final int MIN_PLAYERS = 2;
     public static final int MAX_PLAYERS = InputManager.MAX_PLAYERS;
 
@@ -22,11 +28,13 @@ public final class Lobby {
         private int character;
         private boolean locked;
         private final int localInput;
+        private final int connection;
 
-        Slot(int id, int localInput) {
+        Slot(int id, int localInput, int connection) {
             this.id = id;
             this.character = id % Characters.COUNT; // everyone starts on a different card
             this.localInput = localInput;
+            this.connection = connection;
         }
 
         /** Player number: 0 = Player 1 (the host). Fixed for a match (scores, colours before the pick). */
@@ -49,8 +57,14 @@ public final class Lobby {
         /** True once this player has locked in their character. */
         public boolean isLocked() { return locked; }
 
-        /** Which input slot on this device (keyboard scheme / pad) plays as this player. */
+        /** Which input slot on this device (keyboard scheme / pad) plays as this player, or -1 (another device). */
         public int localInput() { return localInput; }
+
+        /** The network connection of the device this player is on, or -1 (this device). */
+        public int connection() { return connection; }
+
+        /** True for a player on another device. */
+        public boolean isRemote() { return localInput < 0; }
     }
 
     /** What the host sets for the match. */
@@ -102,9 +116,39 @@ public final class Lobby {
      */
     public Slot join(int localInput) {
         if (isFull() || slotFor(localInput) != null) return null;
-        Slot s = new Slot(slots.size, localInput);
+        Slot s = new Slot(slots.size, localInput, -1);
         slots.add(s);
         return s;
+    }
+
+    /**
+     * A player on another device joins (the host keeps this lobby). The name is the one they set on their device.
+     * @return their slot, or null if the room is full or that connection already plays
+     */
+    public Slot joinRemote(int connection, String name) {
+        if (isFull() || slotForConnection(connection) != null) return null;
+        Slot s = new Slot(slots.size, -1, connection);
+        slots.add(s);
+        setName(s.id, name);
+        return s;
+    }
+
+    /** The player on this network connection, or null. */
+    public Slot slotForConnection(int connection) {
+        for (int i = 0; i < slots.size; i++) {
+            Slot s = slots.get(i);
+            if (s.connection == connection && s.connection >= 0) return s;
+        }
+        return null;
+    }
+
+    /** True if anyone plays from another device. */
+    public boolean hasRemotePlayers() {
+        for (int i = 0; i < slots.size; i++) {
+            Slot s = slots.get(i);
+            if (s.isRemote()) return true;
+        }
+        return false;
     }
 
     /** A player leaves; everyone after them moves up a number. */
@@ -115,7 +159,10 @@ public final class Lobby {
 
     /** The player using this device's input slot, or null. */
     public Slot slotFor(int localInput) {
-        for (Slot s : slots) if (s.localInput == localInput) return s;
+        for (int i = 0; i < slots.size; i++) {
+            Slot s = slots.get(i);
+            if (s.localInput == localInput && localInput >= 0) return s;
+        }
         return null;
     }
 
@@ -150,7 +197,10 @@ public final class Lobby {
 
     /** The player who has locked in this character, or -1. */
     public int lockedBy(int character) {
-        for (Slot s : slots) if (s.locked && s.character == character) return s.id;
+        for (int i = 0; i < slots.size; i++) {
+            Slot s = slots.get(i);
+            if (s.locked && s.character == character) return s.id;
+        }
         return -1;
     }
 
@@ -172,12 +222,18 @@ public final class Lobby {
 
     /** Back from a match: everyone picks again (starting on the character they had). */
     public void unlockAll() {
-        for (Slot s : slots) s.locked = false;
+        for (int i = 0; i < slots.size; i++) {
+            Slot s = slots.get(i);
+            s.locked = false;
+        }
     }
 
     public boolean allLocked() {
         if (slots.size < MIN_PLAYERS) return false;
-        for (Slot s : slots) if (!s.locked) return false;
+        for (int i = 0; i < slots.size; i++) {
+            Slot s = slots.get(i);
+            if (!s.locked) return false;
+        }
         return true;
     }
 
@@ -193,5 +249,41 @@ public final class Lobby {
         String[] out = new String[slots.size];
         for (int i = 0; i < out.length; i++) out[i] = slots.get(i).name();
         return out;
+    }
+
+    /** The room as the host sends it to the phones: the settings and each player (name, character, locked in). */
+    public void writeTo(DataOutputStream out) throws IOException {
+        out.writeByte(settings.roomSize);
+        out.writeFloat(settings.matchSeconds);
+        out.writeBoolean(settings.streetEvents);
+        out.writeBoolean(settings.characterTraits);
+        out.writeByte(slots.size);
+        for (int i = 0; i < slots.size; i++) {
+            Slot s = slots.get(i);
+            out.writeUTF(s.name);
+            out.writeByte(s.character);
+            out.writeBoolean(s.locked);
+        }
+    }
+
+    /**
+     * Becomes a copy of the host's room (see {@link #writeTo}). Every player in a copy is on another device as far as
+     * this one knows ({@link Slot#isRemote()}).
+     */
+    public void readFrom(DataInputStream in) throws IOException {
+        settings.roomSize = in.readByte();
+        settings.matchSeconds = in.readFloat();
+        settings.streetEvents = in.readBoolean();
+        settings.characterTraits = in.readBoolean();
+        int count = in.readByte();
+        if (count < 0 || count > MAX_PLAYERS) throw new IOException("bad player count " + count);
+        slots.clear();
+        for (int i = 0; i < count; i++) {
+            Slot s = new Slot(i, -1, -1);
+            s.name = in.readUTF();
+            s.character = Math.floorMod(in.readByte(), Characters.COUNT);
+            s.locked = in.readBoolean();
+            slots.add(s);
+        }
     }
 }

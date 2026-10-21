@@ -7,6 +7,7 @@ import com.badlogic.gdx.Preferences;
 public final class GameSettings {
     private static final String PREFS_NAME = "tumbalata";
     private static final String STREET_EVENTS = "streetEvents";
+    private static final String PLAYER_NAME = "playerName";
 
     private final Preferences prefs = Gdx.app.getPreferences(PREFS_NAME);
     private boolean streetEvents = prefs.getBoolean(STREET_EVENTS, true);
@@ -19,6 +20,16 @@ public final class GameSettings {
     public void setStreetEvents(boolean on) {
         streetEvents = on;
         prefs.putBoolean(STREET_EVENTS, on);
+        prefs.flush();
+    }
+
+    /** This device's player name (set on the server screen; "" until then). */
+    public String playerName() {
+        return prefs.getString(PLAYER_NAME, "");
+    }
+
+    public void setPlayerName(String name) {
+        prefs.putString(PLAYER_NAME, name);
         prefs.flush();
     }
 
