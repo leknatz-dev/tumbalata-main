@@ -227,7 +227,8 @@ public class MainMenuScreen implements Screen {
         game.audio().play(Audio.Sfx.UI_CONFIRM);
         if (index == 0) {
             leaving = true;
-            game.changeScreen(new PlayerSelectScreen(game));
+            game.lobby().clear(); // a new room
+            game.changeScreen(new WaitingRoomScreen(game));
         } else {
             Gdx.app.exit();
         }

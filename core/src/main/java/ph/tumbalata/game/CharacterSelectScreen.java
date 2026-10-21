@@ -400,7 +400,7 @@ public class CharacterSelectScreen implements Screen {
         if (back) {
             leaving = true;
             game.audio().play(Audio.Sfx.UI_BACK);
-            game.changeScreen(new NameEntryScreen(game));
+            game.changeScreen(new WaitingRoomScreen(game));
             return;
         }
 

@@ -436,7 +436,7 @@ public class VictoryScreen implements Screen {
         if (confirm) {
             leaving = true;
             game.audio().play(Audio.Sfx.UI_CONFIRM);
-            game.changeScreen(new MainMenuScreen(game));
+            game.changeScreen(new WaitingRoomScreen(game)); // same players, next match
         }
     }
 

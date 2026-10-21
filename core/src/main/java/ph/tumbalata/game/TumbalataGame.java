@@ -48,7 +48,7 @@ public class TumbalataGame extends Game {
 
     private static boolean isMenuScreen(Screen screen) {
         return screen instanceof MainMenuScreen
-            || screen instanceof PlayerSelectScreen
+            || screen instanceof WaitingRoomScreen
             || screen instanceof NameEntryScreen
             || screen instanceof CharacterSelectScreen
             || screen instanceof VictoryScreen;

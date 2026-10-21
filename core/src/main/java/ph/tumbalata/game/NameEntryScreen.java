@@ -17,7 +17,7 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.ScreenUtils;
 
 /**
- * "ENTER YOUR NAMES": one row per player, between the player count and the character select (placeholder look).
+ * "ENTER YOUR NAMES": one row per player in the waiting room, opened from it with NAMES (placeholder look).
  *
  * <ul>
  *   <li>Keyboard: type into the highlighted row, Backspace deletes, Enter confirms it and moves on, Up / Down or a
@@ -26,8 +26,8 @@ import com.badlogic.gdx.utils.ScreenUtils;
  *   <li>Controllers, each player on their own row, arcade style: Up / Down change the letter, Left / Right move along,
  *       A (or Start) confirms, B deletes (or un-confirms), Select goes back.</li>
  * </ul>
- * When everyone has confirmed, the character select opens. Names start blank every game (they are not kept), and an
- * empty name becomes the default ("P1"...).
+ * When everyone has confirmed, the names are saved and it's back to the waiting room (Esc / Select goes back without
+ * saving). Each row starts with the name that player has now; an empty name becomes the default ("P1"...).
  */
 public class NameEntryScreen implements Screen {
     private static final float MENU_WIDTH = 700f;
@@ -88,8 +88,8 @@ public class NameEntryScreen implements Screen {
         ready = new boolean[playerCount];
         rows = new Rectangle[playerCount];
         for (int p = 0; p < playerCount; p++) {
-            names[p] = new StringBuilder(); // blank every game: everyone types their name again
-            cursor[p] = 0;
+            names[p] = new StringBuilder(game.lobby().slot(p).typedName()); // the name they have now
+            cursor[p] = Math.min(names[p].length(), GameSettings.MAX_NAME_LENGTH - 1);
             rows[p] = new Rectangle((MENU_WIDTH - ROW_W) / 2f, ROWS_TOP - ROW_H - p * (ROW_H + ROW_GAP), ROW_W, ROW_H);
         }
     }
@@ -283,19 +283,19 @@ public class NameEntryScreen implements Screen {
 
         boolean allReady = true;
         for (boolean r : ready) allReady &= r;
-        if (allReady) startCharacterSelect();
+        if (allReady) saveNames();
     }
 
     private void goBack() {
         leaving = true;
         game.audio().play(Audio.Sfx.UI_BACK);
-        game.changeScreen(new PlayerSelectScreen(game));
+        game.changeScreen(new WaitingRoomScreen(game));
     }
 
-    private void startCharacterSelect() {
+    private void saveNames() {
         leaving = true;
         for (int p = 0; p < playerCount; p++) game.lobby().setName(p, names[p].toString()); // blank = "P1"...
-        game.changeScreen(new CharacterSelectScreen(game));
+        game.changeScreen(new WaitingRoomScreen(game));
     }
 
     @Override

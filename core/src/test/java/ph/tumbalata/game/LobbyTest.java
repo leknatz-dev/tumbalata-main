@@ -66,6 +66,57 @@ class LobbyTest {
     }
 
     @Test
+    void playersJoinUntilTheRoomIsFull() {
+        Lobby lobby = new Lobby();
+        lobby.settings.roomSize = 3;
+        assertTrue(lobby.join(0).isHost(), "the first one in is the host");
+        assertEquals(null, lobby.join(0), "that input already plays");
+        lobby.join(2);
+        assertFalse(lobby.isFull());
+        lobby.join(1);
+        assertTrue(lobby.isFull());
+        assertEquals(null, lobby.join(3), "full");
+        assertEquals(2, lobby.slotFor(1).id(), "numbered in join order");
+    }
+
+    @Test
+    void whenSomeoneLeavesTheOthersMoveUp() {
+        Lobby lobby = new Lobby();
+        lobby.join(0);
+        lobby.join(1);
+        lobby.join(2);
+        lobby.setName(2, "kim");
+        lobby.leave(1);
+        assertEquals(2, lobby.size());
+        assertEquals(1, lobby.slotFor(2).id());
+        assertArrayEquals(new String[] { "P1", "KIM" }, lobby.names());
+    }
+
+    @Test
+    void theRoomSizeStaysBetweenTwoAndFourAndFitsEveryoneIn() {
+        Lobby lobby = new Lobby();
+        lobby.join(0);
+        lobby.join(1);
+        lobby.join(2);
+        assertEquals(3, lobby.setRoomSize(2), "can't drop below the 3 in the room");
+        assertEquals(4, lobby.setRoomSize(9));
+        lobby.leave(2);
+        lobby.leave(1);
+        assertEquals(2, lobby.setRoomSize(1));
+    }
+
+    @Test
+    void matchTimeStepsThroughTheChoicesAndStopsAtTheEnds() {
+        Lobby.Settings s = new Lobby.Settings();
+        assertEquals(360f, s.matchSeconds);
+        s.stepMatchTime(1);
+        assertEquals(480f, s.matchSeconds);
+        s.matchSeconds = 60f;
+        s.stepMatchTime(-1);
+        assertEquals(60f, s.matchSeconds, "already the shortest");
+    }
+
+    @Test
     void resetKeepsTheSettingsAndChecksTheCount() {
         Lobby lobby = lobby(2);
         lobby.settings.matchSeconds = 120f;
