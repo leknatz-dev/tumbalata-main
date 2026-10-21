@@ -430,7 +430,35 @@ The most important gap is that the Thrower can never cross the throw line, so tw
 - The screen transition's seam depends on the art: if the sheet is not solid at `SEAM_POSITION`, a hard edge between old and new screen shows during the sweep.
 - The `FRAME_COUNT` in the transition must match the sheet, or frames look cut.
 
-## Roadmap
+## Phone and multiplayer roadmap
+
+The goal is a phone game (Android first, iPhone later) played over the network: tumbang preso only, **no controllers** (each player plays on their own phone with touch controls), and **no bots** (a match only starts with real players). The keyboard and pads stay for development on desktop.
+
+**Game flow**, modelled on Among Us:
+
+1. **Main screen**
+2. **Server screen:** host a game, or join one on the same Wi-Fi (LAN). A private room code over the internet comes later, through a small relay server.
+3. **Waiting room:** players gather here. The host sets the match options (time, mode, street events...) and starts when the room is full.
+4. **Character select**
+5. **The match:** dialogue, mano, can spot, play, then the end.
+6. **Back to the waiting room** after the match (not the main menu), ready for the next one.
+
+**Network model:** the host phone runs `Match`, the same rules code and tests as today. The other phones send what their player is holding every step and draw the snapshots the host sends back.
+
+**Foundation first.** Each step is one commit and leaves the game playing the same:
+
+| Step | Work | Status |
+| --- | --- | --- |
+| 1 | Fixed 60 Hz simulation (`FixedStep`). The match runs in 1/60 s steps whatever the frame rate. The match reads its own `PlayerInput` copies (`latch`): held buttons follow the live input, and a press is kept until a step uses it, so it is never lost or doubled | Done |
+| 2 | Split the art out of `Player` and `Can` into view classes, so the rules can run with no screen (on the host) | Next |
+| 3 | Move the match flow (dialogue → mano → can spot → intro → play → outro) out of `GameScreen` into a class with no graphics | |
+| 4 | Input as per-step "held" frames from any source (touch, keyboard, network), with presses worked out inside the simulation | |
+| 5 | A lobby model of player slots (name, character, ready, where the input comes from), which becomes the waiting room | |
+| 6 | A viewport that fits any phone screen shape (no window resizing) | |
+
+Then: the server screen and waiting room over LAN, then the Android build with touch controls, then private room codes.
+
+## Earlier roadmap (desktop, controllers)
 
 Work in this order: unblock and verify first, then finish the 2-player match, then build 3 to 4 players, then content and polish. No dates are set yet.
 

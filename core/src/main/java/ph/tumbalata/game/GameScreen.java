@@ -122,6 +122,9 @@ public class GameScreen implements Screen {
     private Match match;
     private Audio audio;
     private TumbalataGame game;
+    private InputManager liveInputs;    // this frame's input, straight from the keyboard and pads
+    private PlayerInput[] simInputs;    // what the match reads: held buttons, plus presses kept until a step uses them
+    private final FixedStep fixedStep = new FixedStep();
     private Signs signs;
     private CourtEffects effects;
     private BlurRenderer blur;
@@ -205,6 +208,9 @@ public class GameScreen implements Screen {
         font.getData().setScale(1.2f);
 
         InputManager inputs = ((TumbalataGame) Gdx.app.getApplicationListener()).input();
+        liveInputs = inputs;
+        simInputs = new PlayerInput[characters.length];
+        for (int id = 0; id < simInputs.length; id++) simInputs[id] = new PlayerInput();
 
         map = new TmxMapLoader().load(MAP_FILE);
         mapRenderer = new OrthogonalTiledMapRenderer(map, 1f, spriteBatch);
@@ -226,7 +232,7 @@ public class GameScreen implements Screen {
         Array<Player> players = new Array<>();
         for (int id = 0; id < characters.length; id++) {
             // Position, speed and bounds are set by the match from the player's role
-            Player p = new Player(id, characters[id], 0f, 0f, GameConstants.PLAYER_SPEED, inputs.player(id),
+            Player p = new Player(id, characters[id], 0f, 0f, GameConstants.PLAYER_SPEED, simInputs[id],
                 Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y,
                 playerSheet, playerSlipperSheet, playerCanSheet);
             p.name = names[id];
@@ -400,7 +406,14 @@ public class GameScreen implements Screen {
     @Override
     public void render(float delta) {
         handleScreenKeys();
+        boolean pausedThisFrame = paused;
         handlePause();
+        pausedThisFrame |= paused;
+        for (int id = 0; id < simInputs.length; id++) {
+            simInputs[id].latch(liveInputs.player(id));
+            if (pausedThisFrame) simInputs[id].clearPresses(); // the pause menu used them (A on RESUME is not a throw)
+        }
+        int steps = -1; // match steps run this frame (-1: not a stage where the match runs)
         pauseFade = paused ? Math.min(1f, pauseFade + delta / PAUSE_FADE_SECONDS)
             : Math.max(0f, pauseFade - delta / PAUSE_FADE_SECONDS);
         dialogueFade = stage == Stage.DIALOGUE ? Math.min(1f, dialogueFade + delta / PAUSE_FADE_SECONDS)
@@ -434,7 +447,7 @@ public class GameScreen implements Screen {
                     }
                     break;
                 case CAN_SPOT:
-                    match.update(delta); // only Taya moves; canSpotChosen() moves on to GAME START
+                    steps = runMatch(delta, false); // only Taya moves; canSpotChosen() moves on to GAME START
                     break;
                 case INTRO:
                     // Wait for the screen transition, then "GAME START!"; the match starts when the sign is gone
@@ -446,9 +459,11 @@ public class GameScreen implements Screen {
                     }
                     break;
                 case PLAYING:
-                    if (frozen) break;
-                    match.update(delta);
-                    effects.track(match, delta);
+                    if (frozen) {
+                        steps = 0; // hit-stop: presses wait for the action to start again
+                        break;
+                    }
+                    steps = runMatch(delta, true);
                     showTurnSignWhenFree();
                     if (match.isOver()) {
                         stage = Stage.OUTRO;
@@ -471,6 +486,12 @@ public class GameScreen implements Screen {
                 if (popups.get(i).age >= POPUP_TIME) popups.removeIndex(i);
             }
         }
+        // Presses not waiting for a match step are used up now (the mano, the dialogue and the pause menu read them
+        // this frame), so they can't fire again later
+        if (steps != 0) {
+            for (PlayerInput in : simInputs) in.clearPresses();
+        }
+        if (steps < 0 || pausedThisFrame) fixedStep.reset(); // no catching up on time the match was stopped
 
         ScreenUtils.clear(0f, 0f, 0f, 1f);
 
@@ -813,6 +834,21 @@ public class GameScreen implements Screen {
         return new DialogueBox(lines, characters, names, audio);
     }
 
+    /**
+     * Runs the match in fixed steps for the time that passed (see {@link FixedStep}): 0, 1 or a few steps this frame.
+     * Each step uses up the presses. {@code dust}: footsteps and slipper trails (not while Taya picks the can spot).
+     * Returns how many steps ran.
+     */
+    private int runMatch(float delta, boolean dust) {
+        int steps = fixedStep.advance(delta);
+        for (int i = 0; i < steps && !match.isOver(); i++) {
+            match.update(FixedStep.STEP);
+            if (dust) effects.track(match, FixedStep.STEP);
+            for (PlayerInput in : simInputs) in.clearPresses();
+        }
+        return steps;
+    }
+
     /** True while anyone holds B (skips the dialogue when held long enough). */
     private boolean anyoneHolds() {
         for (int i = 0; i < match.players().size; i++) if (match.players().get(i).input.b) return true;
@@ -1052,7 +1088,7 @@ public class GameScreen implements Screen {
     private boolean pausePressed() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) || Gdx.input.isKeyJustPressed(Input.Keys.P)) return true;
         for (int i = 0; i < match.players().size; i++) {
-            PlayerInput in = match.players().get(i).input;
+            PlayerInput in = liveInputs.player(i); // live: a press kept for the match must not pause twice
             if (in.selectPressed || in.startPressed) return true;
         }
         return false;
