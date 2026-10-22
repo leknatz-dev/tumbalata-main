@@ -402,12 +402,19 @@ Phones (and computers) on the same Wi-Fi play together with plain Java sockets, 
 - JDK 21 (the project targets Java 21; Gradle can download a JDK if it has internet).
 - Gradle wrapper 9.7.1 is in the repo, so no separate Gradle install. The first run downloads Gradle and the LibGDX libraries and needs internet.
 - VS Code with the Extension Pack for Java and Gradle for Java (the project's IDE so far).
+- **Android:** the Android SDK, already on this computer at `C:/Users/TAN/AppData/Local/Android/Sdk` from an earlier Android Studio install. Gradle finds it through `local.properties` (`sdk.dir=...`), which is not in git and is set up once per computer.
+  - The `android` module builds the same game with libGDX's Android backend.
+  - Versions: Android Gradle plugin 9.4.1, compile and target SDK 36, minimum SDK 26 (Android 8), Java 17 for the module.
+  - Landscape only, full screen, and the screen stays awake.
+  - The manifest asks for the network permissions LAN play needs.
 
 **Run from the project root** (the folder with `gradlew.bat`, `core` and `lwjgl3`):
 
 ```
 .\gradlew.bat lwjgl3:run
 .\gradlew.bat build
+.\gradlew.bat android:assembleDebug   # the phone app: android/build/outputs/apk/debug/android-debug.apk
+.\gradlew.bat android:installDebug    # straight onto a phone plugged in by USB (USB debugging on)
 ```
 
 The `lwjgl3` run task uses the `assets` folder as its working directory. Gradle also generates `assets/assets.txt` (a list of asset files) on build.

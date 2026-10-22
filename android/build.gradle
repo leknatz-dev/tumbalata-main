@@ -1,0 +1,88 @@
+// The Android app: the same game (core) with libGDX's Android backend. Build a phone install with
+//   gradlew.bat android:assembleDebug        (android/build/outputs/apk/debug/android-debug.apk)
+// or put it straight on a phone plugged in by USB (with USB debugging on) with
+//   gradlew.bat android:installDebug
+apply plugin: 'com.android.application'
+
+android {
+  namespace = 'ph.tumbalata.game'
+  compileSdk = androidCompileSdk.toInteger()
+
+  sourceSets {
+    main {
+      manifest.srcFile 'AndroidManifest.xml'
+      java.setSrcDirs(['src/main/java'])
+      res.setSrcDirs(['res'])
+      assets.setSrcDirs(['../assets'])   // the same assets folder as the desktop game
+      jniLibs.setSrcDirs(['libs'])       // libGDX's native libraries, unpacked by copyAndroidNatives
+    }
+  }
+
+  defaultConfig {
+    applicationId = 'ph.tumbalata.game'
+    minSdk = androidMinSdk.toInteger()
+    targetSdk = androidCompileSdk.toInteger()
+    versionCode = 1
+    versionName = "$projectVersion"
+  }
+
+  compileOptions {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+  }
+
+  packaging {
+    resources {
+      excludes += ['META-INF/robovm/ios/robovm.xml', 'META-INF/DEPENDENCIES.txt', 'META-INF/DEPENDENCIES',
+                   'META-INF/dependencies.txt', '**/*.gwt.xml']
+    }
+  }
+
+  buildTypes {
+    release {
+      minifyEnabled = false
+    }
+  }
+}
+
+repositories {
+  google()
+}
+
+configurations { natives }
+
+dependencies {
+  implementation project(':core')
+  implementation "com.badlogicgames.gdx:gdx-backend-android:$gdxVersion"
+  implementation "com.badlogicgames.gdx-controllers:gdx-controllers-android:$gdxControllersVersion"
+
+  // Native libraries for each phone CPU type
+  for (String abi : ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']) {
+    natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$abi"
+    natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-$abi"
+    natives "com.badlogicgames.gdx:gdx-box2d-platform:$gdxVersion:natives-$abi"
+  }
+}
+
+// Unpacks the native libraries into libs/<cpu type>/ so they go into the app.
+tasks.register('copyAndroidNatives') {
+  doFirst {
+    for (String abi : ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']) {
+      File dir = file("libs/$abi")
+      dir.mkdirs()
+      configurations.natives.copy().files.each { jar ->
+        if (jar.name.endsWith("natives-${abi}.jar")) {
+          copy {
+            from zipTree(jar)
+            into dir
+            include '*.so'
+          }
+        }
+      }
+    }
+  }
+}
+
+tasks.matching { it.name.contains('merge') && it.name.contains('JniLibFolders') }.configureEach {
+  it.dependsOn 'copyAndroidNatives'
+}

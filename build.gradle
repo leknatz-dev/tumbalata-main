@@ -7,8 +7,7 @@ buildscript {
     maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
   }
   dependencies {
-
-
+    classpath "com.android.tools.build:gradle:$androidPluginVersion"
   }
 }
 
@@ -25,7 +24,7 @@ allprojects {
   }
 }
 
-configure(subprojects) {
+configure(subprojects - project(':android')) {
   apply plugin: 'java-library'
   java.sourceCompatibility = 21
   java.targetCompatibility = 21
@@ -64,6 +63,7 @@ subprojects {
     mavenLocal()
     maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
     maven { url = 'https://jitpack.io' }
+    google()
   }
 }
 
