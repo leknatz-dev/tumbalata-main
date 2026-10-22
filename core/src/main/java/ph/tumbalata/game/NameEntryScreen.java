@@ -58,7 +58,6 @@ public class NameEntryScreen implements Screen {
     private ShapeRenderer shapeRenderer;
     private BitmapFont font;
     private final GlyphLayout layout = new GlyphLayout();
-    private ControlHints hints;
     private final BackButton backButton = new BackButton(); // top left: back to the waiting room, not saving
     private MenuBackdrop backdrop;
     private float time = 0f;
@@ -157,7 +156,6 @@ public class NameEntryScreen implements Screen {
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
         font = Fonts.create();
-        hints = new ControlHints();
         backdrop = game.getBackdrop();
         game.input().setTextEntry(true);
         Gdx.input.setInputProcessor(typing);
@@ -232,10 +230,6 @@ public class NameEntryScreen implements Screen {
             Color.LIGHT_GRAY);
         batch.end();
 
-        // Controller hints
-        hints.draw(batch, shapeRenderer, font, MENU_WIDTH / 2f, HINT_Y, 0.95f,
-            ControlHints.Icon.DPAD_UP_DOWN, "LETTER", ControlHints.Icon.DPAD_RIGHT, "NEXT SPACE",
-            ControlHints.Icon.A, "READY", ControlHints.Icon.B, "UNREADY");
         backButton.draw(viewport, batch, shapeRenderer, font, delta);
     }
 
@@ -320,7 +314,6 @@ public class NameEntryScreen implements Screen {
         if (batch != null) { batch.dispose(); batch = null; }
         if (shapeRenderer != null) { shapeRenderer.dispose(); shapeRenderer = null; }
         if (font != null) { font.dispose(); font = null; }
-        if (hints != null) { hints.dispose(); hints = null; }
         backdrop = null; // shared, owned by TumbalataGame
     }
 }

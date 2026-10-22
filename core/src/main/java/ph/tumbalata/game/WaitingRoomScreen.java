@@ -52,7 +52,6 @@ public class WaitingRoomScreen implements Screen {
     private SpriteBatch batch;
     private ShapeRenderer shapes;
     private BitmapFont font;
-    private ControlHints hints;
     private final BackButton backButton = new BackButton(); // top left: close (host) or leave (phone) the room
     private MenuBackdrop backdrop;
     private final GlyphLayout layout = new GlyphLayout();
@@ -96,7 +95,6 @@ public class WaitingRoomScreen implements Screen {
         batch = new SpriteBatch();
         shapes = new ShapeRenderer();
         font = Fonts.create();
-        hints = new ControlHints();
         backdrop = game.getBackdrop();
     }
 
@@ -306,13 +304,6 @@ public class WaitingRoomScreen implements Screen {
         }
         batch.end();
 
-        if (network.isClient()) {
-            hints.draw(batch, shapes, font, MENU_WIDTH / 2f, HINT_Y, 0.9f, ControlHints.Icon.B, "LEAVE THE ROOM");
-        } else {
-            hints.draw(batch, shapes, font, MENU_WIDTH / 2f, HINT_Y, 0.9f,
-                ControlHints.Icon.DPAD_UP_DOWN, "CHOOSE", ControlHints.Icon.DPAD_LEFT_RIGHT, "CHANGE",
-                ControlHints.Icon.A, "OK", ControlHints.Icon.B, "CLOSE ROOM");
-        }
         backButton.draw(viewport, batch, shapes, font, delta);
     }
 
@@ -347,9 +338,8 @@ public class WaitingRoomScreen implements Screen {
                 }
             } else {
                 float pulse = 0.5f + 0.5f * MathUtils.sin(time * 4f + i);
-                text("WAITING...", PLAYER_X + 66f, mid + 11f, 1.4f, new Color(0.75f, 0.75f, 0.75f, 0.5f + 0.4f * pulse),
+                text("WAITING FOR A PLAYER...", PLAYER_X + 66f, mid + 9f, 1.1f, new Color(0.75f, 0.75f, 0.75f, 0.5f + 0.4f * pulse),
                     Align.left, 0f);
-                if (!network.isClient()) text("PRESS A TO JOIN", PLAYER_X + PLAYER_W - 10f, mid + 6f, 0.85f, Color.GRAY, Align.right, 0f);
             }
         }
     }
@@ -386,7 +376,7 @@ public class WaitingRoomScreen implements Screen {
                 continue;
             }
             if (item == Item.NAMES) {
-                text("NAMES", r.x, mid + 10f, 1.4f, Color.WHITE, Align.center, r.width);
+                text("NAME", r.x, mid + 10f, 1.4f, Color.WHITE, Align.center, r.width);
                 continue;
             }
             String label, value;
@@ -441,7 +431,6 @@ public class WaitingRoomScreen implements Screen {
         if (batch != null) { batch.dispose(); batch = null; }
         if (shapes != null) { shapes.dispose(); shapes = null; }
         if (font != null) { font.dispose(); font = null; }
-        if (hints != null) { hints.dispose(); hints = null; }
         backdrop = null; // shared, owned by TumbalataGame
     }
 }

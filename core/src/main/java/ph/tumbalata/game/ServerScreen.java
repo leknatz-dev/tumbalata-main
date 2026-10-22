@@ -63,7 +63,6 @@ public class ServerScreen implements Screen {
     private SpriteBatch batch;
     private ShapeRenderer shapes;
     private BitmapFont font;
-    private ControlHints hints;
     private final BackButton backButton = new BackButton(); // top left: back to the main menu
     private MenuBackdrop backdrop;
     private final GlyphLayout layout = new GlyphLayout();
@@ -124,7 +123,6 @@ public class ServerScreen implements Screen {
         batch = new SpriteBatch();
         shapes = new ShapeRenderer();
         font = Fonts.create();
-        hints = new ControlHints();
         backdrop = game.getBackdrop();
         searcher = new LanDiscovery.Searcher(Protocol.DISCOVERY_PORT);
         Gdx.input.setInputProcessor(keyboard);
@@ -405,9 +403,6 @@ public class ServerScreen implements Screen {
             String help = typing == NAME ? "TYPE YOUR NAME, ENTER TO SAVE" : "TYPE THE HOST ADDRESS, ENTER TO JOIN";
             text(help, 0f, HINT_Y + 6f, 1f, Color.LIGHT_GRAY, Align.center, MENU_WIDTH);
             batch.end();
-        } else {
-            hints.draw(batch, shapes, font, MENU_WIDTH / 2f, HINT_Y, 0.9f,
-                ControlHints.Icon.DPAD_UP_DOWN, "CHOOSE", ControlHints.Icon.A, "OK", ControlHints.Icon.B, "BACK");
         }
         backButton.draw(viewport, batch, shapes, font, delta);
     }
@@ -449,7 +444,6 @@ public class ServerScreen implements Screen {
         if (batch != null) { batch.dispose(); batch = null; }
         if (shapes != null) { shapes.dispose(); shapes = null; }
         if (font != null) { font.dispose(); font = null; }
-        if (hints != null) { hints.dispose(); hints = null; }
         backdrop = null; // shared, owned by TumbalataGame
     }
 }
