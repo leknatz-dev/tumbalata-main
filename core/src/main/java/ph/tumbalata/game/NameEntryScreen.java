@@ -59,6 +59,7 @@ public class NameEntryScreen implements Screen {
     private BitmapFont font;
     private final GlyphLayout layout = new GlyphLayout();
     private ControlHints hints;
+    private final BackButton backButton = new BackButton(); // top left: back to the waiting room, not saving
     private MenuBackdrop backdrop;
     private float time = 0f;
     private boolean leaving = false;
@@ -235,6 +236,7 @@ public class NameEntryScreen implements Screen {
         hints.draw(batch, shapeRenderer, font, MENU_WIDTH / 2f, HINT_Y, 0.95f,
             ControlHints.Icon.DPAD_UP_DOWN, "LETTER", ControlHints.Icon.DPAD_RIGHT, "NEXT SPACE",
             ControlHints.Icon.A, "READY", ControlHints.Icon.B, "UNREADY");
+        backButton.draw(viewport, batch, shapeRenderer, font, delta);
     }
 
     private void drawCentered(String text, float cx, float y, float scale, Color color) {
@@ -251,7 +253,7 @@ public class NameEntryScreen implements Screen {
         if (leaving || game.input().isMenuLocked()) return;
 
         // Keyboard row and leaving
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+        if (backButton.clicked(viewport) || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
             goBack();
             return;
         }

@@ -73,6 +73,7 @@ public class CharacterSelectScreen implements Screen {
     private BitmapFont font;
     private final GlyphLayout layout = new GlyphLayout();
     private ControlHints hints;
+    private final BackButton backButton = new BackButton(); // top left: back to the waiting room
 
     private Texture background;
     private MenuBackdrop backdrop; // shared live background (null = use the image background)
@@ -286,6 +287,7 @@ public class CharacterSelectScreen implements Screen {
             hints.draw(batch, shapeRenderer, font, MENU_WIDTH / 2f, HINT_Y - 6f, 1f,
                 ControlHints.Icon.DPAD_LEFT_RIGHT, "CHOOSE", ControlHints.Icon.A, "LOCK IN", ControlHints.Icon.B, "CHANGE");
         }
+        backButton.draw(viewport, batch, shapeRenderer, font, delta);
     }
 
     /** Big art is shrunk a lot to fit the box: smooth filtering keeps it clean (small pixel art stays sharp). */
@@ -383,12 +385,21 @@ public class CharacterSelectScreen implements Screen {
         if (in.fullscreen) game.toggleFullscreen();
         if (leaving || input.isMenuLocked()) return; // ignore input while a screen transition plays
         Network network = game.network();
+        boolean backTapped = backButton.clicked(viewport);
         if (network.isClient()) {
+            if (backTapped || in.back) { // a phone leaves the room (the others carry on without it)
+                leaving = true;
+                game.audio().play(Audio.Sfx.UI_BACK);
+                network.close();
+                lobby.clear();
+                game.changeScreen(new ServerScreen(game));
+                return;
+            }
             phoneInput(input, network);
             return;
         }
 
-        boolean back = in.back; // Esc
+        boolean back = in.back || backTapped; // Esc or the button
         for (int p = 0; p < playerCount; p++) {
             Lobby.Slot slot = lobby.slot(p);
             if (slot.isRemote()) continue; // picks on their own phone (Network applies the moves)

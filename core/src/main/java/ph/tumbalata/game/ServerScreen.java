@@ -64,6 +64,7 @@ public class ServerScreen implements Screen {
     private ShapeRenderer shapes;
     private BitmapFont font;
     private ControlHints hints;
+    private final BackButton backButton = new BackButton(); // top left: back to the main menu
     private MenuBackdrop backdrop;
     private final GlyphLayout layout = new GlyphLayout();
 
@@ -164,7 +165,7 @@ public class ServerScreen implements Screen {
         }
 
         PlayerInput in = input.player(0);
-        if (in.bPressed || in.selectPressed || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+        if (backButton.clicked(viewport) || in.bPressed || in.selectPressed || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
             leaving = true;
             game.audio().play(Audio.Sfx.UI_BACK);
             game.changeScreen(new MainMenuScreen(game));
@@ -408,6 +409,7 @@ public class ServerScreen implements Screen {
             hints.draw(batch, shapes, font, MENU_WIDTH / 2f, HINT_Y, 0.9f,
                 ControlHints.Icon.DPAD_UP_DOWN, "CHOOSE", ControlHints.Icon.A, "OK", ControlHints.Icon.B, "BACK");
         }
+        backButton.draw(viewport, batch, shapes, font, delta);
     }
 
     /** Outlined text. {@code width} 0 = no box (left / right aligned at x). Inside batch.begin()/end(). */

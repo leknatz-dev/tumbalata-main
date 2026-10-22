@@ -53,6 +53,7 @@ public class WaitingRoomScreen implements Screen {
     private ShapeRenderer shapes;
     private BitmapFont font;
     private ControlHints hints;
+    private final BackButton backButton = new BackButton(); // top left: close (host) or leave (phone) the room
     private MenuBackdrop backdrop;
     private final GlyphLayout layout = new GlyphLayout();
 
@@ -129,7 +130,7 @@ public class WaitingRoomScreen implements Screen {
         }
 
         // The host: Player 1's keys / pad, or the mouse
-        if (host.bPressed || host.selectPressed || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+        if (backButton.clicked(viewport) || host.bPressed || host.selectPressed || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
             closeRoom();
             return;
         }
@@ -162,7 +163,7 @@ public class WaitingRoomScreen implements Screen {
     /** A phone in someone else's room: B or Esc leaves. */
     private void clientInput(InputManager input) {
         PlayerInput in = input.player(0);
-        if (in.bPressed || in.selectPressed || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+        if (backButton.clicked(viewport) || in.bPressed || in.selectPressed || Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
             game.audio().play(Audio.Sfx.UI_BACK);
             backToServerScreen(null);
         }
@@ -312,6 +313,7 @@ public class WaitingRoomScreen implements Screen {
                 ControlHints.Icon.DPAD_UP_DOWN, "CHOOSE", ControlHints.Icon.DPAD_LEFT_RIGHT, "CHANGE",
                 ControlHints.Icon.A, "OK", ControlHints.Icon.B, "CLOSE ROOM");
         }
+        backButton.draw(viewport, batch, shapes, font, delta);
     }
 
     private float playerRowY(int i) {
