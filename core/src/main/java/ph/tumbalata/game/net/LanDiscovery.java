@@ -129,6 +129,30 @@ public final class LanDiscovery {
         return out;
     }
 
+    /**
+     * This device's address on the Wi-Fi (like 192.168.1.17), for others to join by address when the room search
+     * doesn't reach them, or null if there is none.
+     */
+    public static String localAddress() {
+        String fallback = null;
+        try {
+            Enumeration<NetworkInterface> all = NetworkInterface.getNetworkInterfaces();
+            for (NetworkInterface ni : all == null ? Collections.<NetworkInterface>emptyList() : Collections.list(all)) {
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) continue;
+                for (InterfaceAddress a : ni.getInterfaceAddresses()) {
+                    InetAddress ip = a.getAddress();
+                    if (!(ip instanceof java.net.Inet4Address) || !ip.isSiteLocalAddress()) continue;
+                    String text = ip.getHostAddress();
+                    if (text.startsWith("192.168.")) return text; // home Wi-Fi: the likeliest one
+                    if (fallback == null) fallback = text;
+                }
+            }
+        } catch (IOException ignored) {
+            // no network
+        }
+        return fallback;
+    }
+
     /** Keeps searching in the background; {@link #rooms()} is the latest list. Stop it with {@link #stop()}. */
     public static final class Searcher {
         private volatile List<Room> rooms = Collections.emptyList();

@@ -45,6 +45,7 @@ public class WaitingRoomScreen implements Screen {
     private final TumbalataGame game;
     private final Lobby lobby;
     private final Network network;
+    private final String address; // host: this device's Wi-Fi address, for phones that join by typing it (or null)
 
     private OrthographicCamera camera;
     private MenuViewport viewport;
@@ -68,6 +69,7 @@ public class WaitingRoomScreen implements Screen {
         this.game = game;
         this.lobby = game.lobby();
         this.network = game.network();
+        this.address = network.isHosting() ? ph.tumbalata.game.net.LanDiscovery.localAddress() : null;
         if (!network.isClient()) {
             if (lobby.size() == 0) lobby.join(0); // a new room: the host is in it
             lobby.unlockAll();
@@ -294,6 +296,7 @@ public class WaitingRoomScreen implements Screen {
         if (network.isClient() && network.myId() < 0) count = "JOINING...";
         else if (network.isClient()) count = "HOST: " + lobby.slot(0).name() + "   " + lobby.size() + " / " + lobby.settings.roomSize;
         else count = full ? "ROOM FULL! THE HOST CAN START" : lobby.size() + " / " + lobby.settings.roomSize + " PLAYERS";
+        if (address != null && !full) count += "     JOIN AT " + address; // for phones the room search doesn't reach
         text(count, 0f, COUNT_Y, 1.2f, full ? Color.GOLD : Color.LIGHT_GRAY, Align.center, MENU_WIDTH);
         drawPlayerRowText();
         drawSettingText();

@@ -8,6 +8,7 @@ public final class GameSettings {
     private static final String PREFS_NAME = "tumbalata";
     private static final String STREET_EVENTS = "streetEvents";
     private static final String PLAYER_NAME = "playerName";
+    private static final String LAST_ADDRESS = "lastAddress";
 
     private final Preferences prefs = Gdx.app.getPreferences(PREFS_NAME);
     private boolean streetEvents = prefs.getBoolean(STREET_EVENTS, true);
@@ -30,6 +31,16 @@ public final class GameSettings {
 
     public void setPlayerName(String name) {
         prefs.putString(PLAYER_NAME, name);
+        prefs.flush();
+    }
+
+    /** The last host address typed in to join by address ("" until then). */
+    public String lastAddress() {
+        return prefs.getString(LAST_ADDRESS, "");
+    }
+
+    public void setLastAddress(String address) {
+        prefs.putString(LAST_ADDRESS, address);
         prefs.flush();
     }
 
