@@ -2,6 +2,10 @@ package ph.tumbalata.game;
 
 import com.badlogic.gdx.utils.IntArray;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
 /**
  * Who plays which role, by player id (0 = Player 1). One Taya guards the can; everyone else is a Thrower,
  * and the Throwers take turns. With 2 players there is one Thrower, so the turn never moves.
@@ -68,5 +72,19 @@ public class Roster {
         if (index < 0) throw new IllegalArgumentException("player " + throwerId + " is not a Thrower");
         throwers.set(index, taya);
         taya = throwerId;
+    }
+
+    // Network copy (the host sends this state; a phone draws its copy)
+    void writeState(DataOutputStream out) throws IOException {
+        out.writeByte(taya);
+        out.writeByte(throwers.size);
+        for (int i = 0; i < throwers.size; i++) out.writeByte(throwers.get(i));
+    }
+
+    void readState(DataInputStream in) throws IOException {
+        taya = in.readByte();
+        throwers.clear();
+        int n = in.readByte();
+        for (int i = 0; i < n; i++) throwers.add(in.readByte());
     }
 }

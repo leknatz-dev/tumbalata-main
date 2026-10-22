@@ -113,6 +113,15 @@ public class GameScreen implements Screen {
     private final int[] characters;                        // characters[playerId] = picked character
     private final String[] names;                          // names[playerId]
     private final int[] localInputs;                       // localInputs[playerId] = input slot on this device
+    private final int[] connections;                       // connections[playerId] = their phone (host), or -1
+    private final Array<DialogueScript.Line> introLines;
+    private final boolean phone;                           // in someone else's room: draws the host's match
+    private Network network;
+    private Match.Events matchEvents;                      // sounds, signs and effects for what happens
+    private MatchFlow.Listener flowListener;
+    private final MatchEventLog eventLog = new MatchEventLog(); // host: the events of each step, for the phones
+    private final java.io.ByteArrayOutputStream stateBytes = new java.io.ByteArrayOutputStream();
+    private float sinceState = 0f;                         // phone: seconds since the last state from the host
     private final Lobby.Settings settings = new Lobby.Settings(); // this match's settings (a copy of the lobby's)
     private final Array<PlayerView> drawOrder = new Array<>(); // players sorted back to front each frame
     private Match match;
@@ -170,8 +179,12 @@ public class GameScreen implements Screen {
     }
     private final Array<Popup> popups = new Array<>();
 
-    /** A match for the players in the lobby (2 to 4, with their names and characters), with its settings. */
-    public GameScreen(Lobby lobby) {
+    /**
+     * A match for the players in the lobby (2 to 4, with their names and characters), with its settings.
+     * @param lines the intro dialogue (the host picks it: {@link #introLines}; phones get the same from the host)
+     * @param phone true on a phone in someone else's room: the host runs the match and this screen draws its copy
+     */
+    public GameScreen(Lobby lobby, Array<DialogueScript.Line> lines, boolean phone) {
         if (lobby.size() < Lobby.MIN_PLAYERS || lobby.size() > InputManager.MAX_PLAYERS) {
             throw new IllegalArgumentException("2 to " + InputManager.MAX_PLAYERS + " players, got " + lobby.size());
         }
@@ -179,6 +192,10 @@ public class GameScreen implements Screen {
         this.names = lobby.names();
         this.localInputs = new int[lobby.size()];
         for (int i = 0; i < localInputs.length; i++) localInputs[i] = lobby.slot(i).localInput();
+        this.connections = new int[lobby.size()];
+        for (int i = 0; i < connections.length; i++) connections[i] = lobby.slot(i).connection();
+        this.introLines = lines;
+        this.phone = phone;
         settings.matchSeconds = lobby.settings.matchSeconds;
         settings.streetEvents = lobby.settings.streetEvents;
         settings.characterTraits = lobby.settings.characterTraits;
@@ -205,7 +222,11 @@ public class GameScreen implements Screen {
         for (int id = 0; id < simInputs.length; id++) simInputs[id] = new PlayerInput();
         localInput = new LocalInputSource(inputs);
         inputSources = new InputSource[characters.length];
-        for (int id = 0; id < inputSources.length; id++) inputSources[id] = localInput.slot(localInputs[id]);
+        network = ((TumbalataGame) Gdx.app.getApplicationListener()).network();
+        for (int id = 0; id < inputSources.length; id++) { // a player on another phone plays through the network
+            inputSources[id] = connections[id] >= 0 && network.isHosting()
+                ? network.remoteInput(connections[id]) : localInput.slot(localInputs[id]);
+        }
 
         map = new TmxMapLoader().load(MAP_FILE);
         mapRenderer = new OrthogonalTiledMapRenderer(map, 1f, spriteBatch);
@@ -280,11 +301,11 @@ public class GameScreen implements Screen {
         match.setCharacterTraits(settings.characterTraits);
         match.setStreetEvents(settings.streetEvents);
 
-        Dialogue dialogue = new Dialogue(loadIntroLines());
+        Dialogue dialogue = new Dialogue(introLines);
         dialogueBox = new DialogueBox(dialogue, characters, names, audio);
         mano = new Mano(players.size, new java.util.Random());
         flow = new MatchFlow(match, mano, dialogue);
-        flow.setListener(new MatchFlow.Listener() {
+        flowListener = new MatchFlow.Listener() {
             @Override
             public void stageStarted(MatchFlow.Stage stage) {
                 switch (stage) {
@@ -318,8 +339,8 @@ public class GameScreen implements Screen {
             public void gameStartShown() {
                 signs.show(Signs.Sign.GAME_START);
             }
-        });
-        flow.setMatchEvents(new Match.Events() {
+        };
+        matchEvents = new Match.Events() {
             @Override
             public void scored(Player player, int points) {
                 Popup popup = new Popup();
@@ -418,7 +439,14 @@ public class GameScreen implements Screen {
                 effects.burst(player.position.x, player.position.y + Match.FEET_OFFSET_Y, 8, 70f);
                 effects.shake(2.5f, 0.2f);
             }
-        });
+        };
+        if (network.isHosting()) { // the host writes down each step's events for the phones
+            flow.setListener(eventLog.recording(flowListener));
+            flow.setMatchEvents(eventLog.recording(matchEvents));
+        } else {
+            flow.setListener(flowListener);
+            flow.setMatchEvents(matchEvents);
+        }
     }
 
     private static Texture loadPixelTexture(String file) {
@@ -462,7 +490,8 @@ public class GameScreen implements Screen {
                     simInputs[id].hold(frame);
                 }
             }
-            stepFlow(fixedStep.advance(delta));
+            if (phone) followHost(delta);
+            else stepFlow(fixedStep.advance(delta));
             if (flow.stage() == MatchFlow.Stage.PLAYING) showTurnSignWhenFree();
             if (flow.stage() == MatchFlow.Stage.DIALOGUE) dialogueBox.update(); // voice blips
             if (flow.stage() == MatchFlow.Stage.MANO) manoTickSound();
@@ -471,8 +500,8 @@ public class GameScreen implements Screen {
                 popups.get(i).age += delta;
                 if (popups.get(i).age >= POPUP_TIME) popups.removeIndex(i);
             }
-            // Where to draw things: between the last two steps
-            float alpha = fixedStep.alpha();
+            // Where to draw things: between the last two steps (on a phone: the last two states from the host)
+            float alpha = phone ? Math.min(1f, sinceState / FixedStep.STEP) : fixedStep.alpha();
             for (PlayerView v : views) v.follow(alpha);
             canView.follow(alpha);
         }
@@ -802,11 +831,11 @@ public class GameScreen implements Screen {
     }
 
     /** The intro dialogue for this many players (a random variant), with the players' names filled in. */
-    private Array<DialogueScript.Line> loadIntroLines() {
+    public static Array<DialogueScript.Line> introLines(int players, String[] names) {
         if (!Gdx.files.internal("dialogue/intro.txt").exists()) return new Array<>();
         DialogueScript script = DialogueScript.parse(Gdx.files.internal("dialogue/intro.txt").readString("UTF-8"));
         if (script.problems() > 0) Gdx.app.error("Dialogue", script.problems() + " line(s) in dialogue/intro.txt could not be read");
-        return script.pick(characters.length, names, new java.util.Random());
+        return script.pick(players, names, new java.util.Random());
     }
 
     /**
@@ -833,6 +862,56 @@ public class GameScreen implements Screen {
                 canView.afterStep(FixedStep.STEP);
             }
             if (moving && stage == MatchFlow.Stage.PLAYING) effects.track(match, FixedStep.STEP); // dust, trails
+            if (network.isHosting()) sendState();
+        }
+    }
+
+    /** Host: the match as it is after this step, and what happened in it, to every phone. */
+    private void sendState() {
+        try {
+            stateBytes.reset();
+            java.io.DataOutputStream out = new java.io.DataOutputStream(stateBytes);
+            flow.writeState(out);
+            out.write(eventLog.take()); // the events follow the state
+            out.flush();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e); // writing to memory doesn't fail
+        }
+        network.hostSendState(stateBytes.toByteArray());
+    }
+
+    /**
+     * A phone: sends this phone's input to the host once per step, and puts every state the host sent since the last
+     * frame into this screen's copy of the match, playing its events (sounds, signs, effects) as they come.
+     */
+    private void followHost(float delta) {
+        localInput.update();
+        int steps = fixedStep.advance(delta);
+        for (int i = 0; i < steps; i++) {
+            localInput.sample(0, frame); // this phone's own controls
+            network.sendInput(frame);
+        }
+        sinceState += delta;
+        for (byte[] state = network.nextState(); state != null; state = network.nextState()) {
+            for (PlayerView v : views) v.beforeStep();
+            canView.beforeStep();
+            try {
+                java.io.DataInputStream in = new java.io.DataInputStream(new java.io.ByteArrayInputStream(state));
+                flow.readState(in);
+                byte[] events = new byte[in.available()];
+                in.readFully(events);
+                boolean moving = !flow.isFrozen()
+                    && (flow.stage() == MatchFlow.Stage.CAN_SPOT || flow.stage() == MatchFlow.Stage.PLAYING);
+                if (moving) {
+                    for (PlayerView v : views) v.afterStep(FixedStep.STEP);
+                    canView.afterStep(FixedStep.STEP);
+                    if (flow.stage() == MatchFlow.Stage.PLAYING) effects.track(match, FixedStep.STEP);
+                }
+                MatchEventLog.play(events, match, matchEvents, flowListener);
+            } catch (java.io.IOException e) {
+                Gdx.app.error("Network", "Bad state from the host: " + e);
+            }
+            sinceState = 0f;
         }
     }
 
@@ -1047,7 +1126,15 @@ public class GameScreen implements Screen {
     }
 
     /** Select or Start on any player's pad (R on the keyboard is Select for P1 / P2), or Esc / P. */
+    /** True when other phones play in this match (this is one of them, or players from them are in it). */
+    private boolean playsWithPhones() {
+        if (phone) return true;
+        for (int c : connections) if (c >= 0) return true;
+        return false;
+    }
+
     private boolean pausePressed() {
+        if (playsWithPhones()) return false; // a match with other phones doesn't stop for one player
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) || Gdx.input.isKeyJustPressed(Input.Keys.P)) return true;
         for (int i = 0; i < match.players().size; i++) {
             PlayerInput in = liveInputs.player(i); // this frame's input (the match gets its own per step)
@@ -1088,9 +1175,13 @@ public class GameScreen implements Screen {
 
     /** Time is up and the "GOOD JOB!" sign has played: on to the victory screen. */
     private void endMatch() {
+        if (phone) return; // the host sends everyone to the podium, with the scores
         if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
             TumbalataGame tumbalata = (TumbalataGame) Gdx.app.getApplicationListener();
-            tumbalata.changeScreen(new VictoryScreen(tumbalata, match.scores(), characters, names, Awards.compute(match.stats())));
+            int[] scores = match.scores();
+            Array<Awards.Award> awards = Awards.compute(match.stats());
+            network.hostGo(Network.Go.VICTORY, Network.writeVictory(scores, awards));
+            tumbalata.changeScreen(new VictoryScreen(tumbalata, scores, characters, names, awards));
         }
     }
 

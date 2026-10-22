@@ -4,6 +4,10 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
 /**
  * The rules of a Tumbalata match: roles, round flow, tagging, scoring and the match timer.
  * No rendering or GL code: GameScreen draws what this class says, and MatchTest plays rounds through it.
@@ -1008,5 +1012,119 @@ public class Match {
             float base = roster.isTaya(p.id) ? GameConstants.TAYA_SPEED : GameConstants.PLAYER_SPEED;
             p.speed = base * speedFactor(p);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Network copy: the host runs the match and sends this state after every step; a phone puts it into its own
+    // Match (which never runs) and draws that. Everything the rules and the drawing read is in it.
+    // ------------------------------------------------------------------
+
+    void writeState(DataOutputStream out) throws IOException {
+        out.writeByte(mode.ordinal());
+        out.writeByte(aim.ordinal());
+        out.writeByte(aimer == null ? -1 : aimer.id);
+        out.writeFloat(angleTimer);
+        out.writeFloat(currentAngle);
+        out.writeFloat(powerTimer);
+        out.writeFloat(currentPower);
+        out.writeFloat(canLandingSpot.x);
+        out.writeFloat(canLandingSpot.y);
+        out.writeBoolean(isImpactPending);
+        out.writeFloat(impactDelayTimer);
+        out.writeByte(impactVictim == null ? -1 : impactVictim.id);
+        out.writeFloat(timeLeft);
+        out.writeBoolean(over);
+        out.writeFloat(canBase.x);
+        out.writeFloat(canBase.y);
+        out.writeByte(announcedTurn == null ? -1 : announcedTurn.id);
+        out.writeFloat(canLockTimer);
+        out.writeByte(knocksThisRound);
+        out.writeBoolean(characterTraits);
+        out.writeBoolean(streetEvents);
+        out.writeFloat(trashTimer);
+        out.writeFloat(dogTimer);
+        out.writeByte(trash.size);
+        for (int i = 0; i < trash.size; i++) {
+            Trash t = trash.get(i);
+            out.writeByte(t.kind);
+            out.writeFloat(t.from.x);
+            out.writeFloat(t.from.y);
+            out.writeFloat(t.target.x);
+            out.writeFloat(t.target.y);
+            out.writeByte(t.state.ordinal());
+            out.writeFloat(t.time);
+        }
+        out.writeBoolean(dog != null);
+        if (dog != null) {
+            out.writeFloat(dog.spot.x);
+            out.writeFloat(dog.spot.y);
+            out.writeBoolean(dog.direction > 0);
+            out.writeFloat(dog.position.x);
+            out.writeFloat(dog.position.y);
+            out.writeByte(dog.state.ordinal());
+            out.writeFloat(dog.time);
+        }
+        out.writeBoolean(poop != null);
+        if (poop != null) {
+            out.writeFloat(poop.x);
+            out.writeFloat(poop.y);
+        }
+        roster.writeState(out);
+        for (int i = 0; i < players.size; i++) players.get(i).writeState(out);
+        can.writeState(out);
+    }
+
+    void readState(DataInputStream in) throws IOException {
+        mode = RoundMode.values()[in.readByte()];
+        aim = Aim.values()[in.readByte()];
+        aimer = playerOrNull(in.readByte());
+        angleTimer = in.readFloat();
+        currentAngle = in.readFloat();
+        powerTimer = in.readFloat();
+        currentPower = in.readFloat();
+        canLandingSpot.set(in.readFloat(), in.readFloat());
+        isImpactPending = in.readBoolean();
+        impactDelayTimer = in.readFloat();
+        impactVictim = playerOrNull(in.readByte());
+        timeLeft = in.readFloat();
+        over = in.readBoolean();
+        canBase.set(in.readFloat(), in.readFloat());
+        announcedTurn = playerOrNull(in.readByte());
+        canLockTimer = in.readFloat();
+        knocksThisRound = in.readByte();
+        characterTraits = in.readBoolean();
+        streetEvents = in.readBoolean();
+        trashTimer = in.readFloat();
+        dogTimer = in.readFloat();
+        trash.clear();
+        int pieces = in.readByte();
+        for (int i = 0; i < pieces; i++) {
+            int kind = in.readByte();
+            Trash t = new Trash(in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat(), kind);
+            t.state = Trash.State.values()[in.readByte()];
+            t.time = in.readFloat();
+            trash.add(t);
+        }
+        if (in.readBoolean()) {
+            float spotX = in.readFloat(), spotY = in.readFloat();
+            boolean fromLeft = in.readBoolean();
+            if (dog == null || dog.spot.x != spotX || dog.spot.y != spotY || (dog.direction > 0) != fromLeft) {
+                dog = new StrayDog(spotX, spotY, fromLeft); // a new dog
+            }
+            dog.position.set(in.readFloat(), in.readFloat());
+            dog.state = StrayDog.State.values()[in.readByte()];
+            dog.time = in.readFloat();
+        } else {
+            dog = null;
+        }
+        poop = in.readBoolean() ? new Vector2(in.readFloat(), in.readFloat()) : null;
+        roster.readState(in);
+        taya = players.get(roster.taya());
+        for (int i = 0; i < players.size; i++) players.get(i).readState(in, court);
+        can.readState(in);
+    }
+
+    private Player playerOrNull(int id) {
+        return id < 0 ? null : players.get(id);
     }
 }

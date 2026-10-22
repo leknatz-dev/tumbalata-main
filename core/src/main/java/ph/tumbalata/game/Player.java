@@ -3,6 +3,10 @@ package ph.tumbalata.game;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.math.Vector2;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
 /**
  * One player's state in a match: position, speed, slipper, can, slipping. No art: {@link PlayerView} draws it, so the
  * rules can run with no screen (a host or a test).
@@ -186,5 +190,54 @@ public class Player {
 
     public boolean isMoving() {
         return moving;
+    }
+
+    // ------------------------------------------------------------------
+    // Network copy (the host sends this state; a phone draws its copy)
+    // ------------------------------------------------------------------
+
+    void writeState(DataOutputStream out) throws IOException {
+        out.writeFloat(position.x);
+        out.writeFloat(position.y);
+        out.writeFloat(velocity.x);
+        out.writeFloat(velocity.y);
+        out.writeFloat(speed);
+        out.writeInt(score);
+        out.writeBoolean(hasCan);
+        out.writeBoolean(hasSlipper);
+        out.writeBoolean(hasThrown);
+        out.writeBoolean(moving);
+        out.writeBoolean(facingRight);
+        out.writeFloat(slideTime);
+        out.writeFloat(stunTime);
+        out.writeFloat(minX);
+        out.writeFloat(maxX);
+        out.writeBoolean(keepBehind != null);
+        out.writeFloat(keepBehindMargin);
+        out.writeFloat(slipper.position.x);
+        out.writeFloat(slipper.position.y);
+        out.writeFloat(slipper.velocity.x);
+        out.writeFloat(slipper.velocity.y);
+    }
+
+    /** {@code court}: the line a Thrower who hasn't thrown is kept behind. */
+    void readState(DataInputStream in, CourtLine court) throws IOException {
+        position.set(in.readFloat(), in.readFloat());
+        velocity.set(in.readFloat(), in.readFloat());
+        speed = in.readFloat();
+        score = in.readInt();
+        hasCan = in.readBoolean();
+        hasSlipper = in.readBoolean();
+        hasThrown = in.readBoolean();
+        moving = in.readBoolean();
+        facingRight = in.readBoolean();
+        slideTime = in.readFloat();
+        stunTime = in.readFloat();
+        minX = in.readFloat();
+        maxX = in.readFloat();
+        keepBehind = in.readBoolean() ? court : null;
+        keepBehindMargin = in.readFloat();
+        slipper.position.set(in.readFloat(), in.readFloat());
+        slipper.velocity.set(in.readFloat(), in.readFloat());
     }
 }

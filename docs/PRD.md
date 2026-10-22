@@ -382,7 +382,18 @@ Phones (and computers) on the same Wi-Fi play together with plain Java sockets, 
 - **Threads:** the network runs on its own threads and hands what happened to the game thread as events (`poll()`), so the lobby is only touched on the game thread.
 - **Messages:** an int length, a type byte, then the message. `Protocol.VERSION` goes up whenever they change.
 - **Testing on one computer:** run the game twice. One hosts, the other finds the room under ROOMS ON THIS WI-FI. Windows may ask once to let Java use the network.
-- **Not yet:** the character select and the match over the Wi-Fi (START says so when a phone is in the room). Android will also need the `INTERNET` and `CHANGE_WIFI_MULTICAST_STATE` permissions.
+- **The whole game over the Wi-Fi.** `Network.update` runs every frame, whatever screen is up. It handles the network events, keeps the phones' copies of the room in sync, and moves phones to the screen the host is on (`GO`: waiting room → character select → match → victory). After the podium everyone returns to the waiting room.
+  - **Character select:** a phone sends its moves (`PICK`: left, right, lock in, change, or a tapped card). The host applies them with the lobby's rule (each character once) and sends the room back. When everyone is locked in, the host picks the intro dialogue and sends it with `GO MATCH`.
+  - **The match:** the host runs `MatchFlow` as usual. A phone's player plays through a `RemoteInputSource`, fed by the phone's `INPUT` frames, one per step. After every step the host sends `STATE`: `MatchFlow.writeState` (the stage, mano, dialogue, match, roster, players, can, trash, dog and poop), then that step's events from a `MatchEventLog`. A phone never runs the rules. It puts each state into its own copy (`readState`), plays the events to its screen (same sounds, signs and effects), and draws between the last two states.
+  - **Tests:** a copy made after every step matches the host byte for byte through a whole match, and the event log plays back the same events in order.
+- **Rules for a match with phones:**
+  - Pausing is off (the match doesn't stop for one player).
+  - A phone that joins mid-match is turned away ("A MATCH IS ON").
+  - A phone that drops out mid-match leaves its player standing still, and the player leaves the room after the match. Dropping out during character select sends everyone back to the waiting room.
+  - If the host closes the room, the phones go back to the server screen.
+- **Not yet:**
+  - A phone doesn't predict its own movement, so it sees its player move after one trip to the host and back. That's fine on home Wi-Fi; it would matter over the internet.
+  - Android also needs the `INTERNET` and `CHANGE_WIFI_MULTICAST_STATE` permissions.
 
 ## Build, run and environment
 
@@ -469,7 +480,7 @@ The goal is a phone game (Android first, iPhone later) played over the network: 
 | 5 | `Lobby` (held by `TumbalataGame`): one slot per player (name, character, locked in, which input slot on this device plays them) and the match settings (time, street events, character traits). The menus fill it in, the "each character once" rule lives in it, and `GameScreen` is made from it. It becomes the waiting room | Done |
 | 6 | One window that never resizes (1280 x 720 on desktop). Menus use `MenuViewport` (the 700 x 500 layout centred, the live map filling any extra width or height); the match is letterboxed. Checked at 16:9, a 2.17:1 phone and 4:3 | Done |
 
-Then: the waiting room (done), the server screen with LAN host / join and a waiting room in sync on every phone (done), the character select and the match over the Wi-Fi, then the Android build with touch controls, then private room codes.
+Then: the waiting room (done), the server screen with LAN host / join and a waiting room in sync on every phone (done), the character select and the match over the Wi-Fi (done), then the Android build with touch controls, then private room codes.
 
 ## Earlier roadmap (desktop, controllers)
 

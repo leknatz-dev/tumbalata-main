@@ -2,6 +2,10 @@ package ph.tumbalata.game;
 
 import com.badlogic.gdx.math.Vector2;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
 /** The can's physics: position, height in the air, rolling and bouncing. No art: {@link CanView} draws it. */
 public class Can {
     public Vector2 position;
@@ -150,5 +154,24 @@ public class Can {
         zPosition = 0f;
         zVelocity = 0f;
         isHit = false;
+    }
+
+    // Network copy (the host sends this state; a phone draws its copy)
+    void writeState(DataOutputStream out) throws IOException {
+        out.writeFloat(position.x);
+        out.writeFloat(position.y);
+        out.writeFloat(velocity.x);
+        out.writeFloat(velocity.y);
+        out.writeFloat(zPosition);
+        out.writeFloat(zVelocity);
+        out.writeBoolean(isHit);
+    }
+
+    void readState(DataInputStream in) throws IOException {
+        position.set(in.readFloat(), in.readFloat());
+        velocity.set(in.readFloat(), in.readFloat());
+        zPosition = in.readFloat();
+        zVelocity = in.readFloat();
+        isHit = in.readBoolean();
     }
 }

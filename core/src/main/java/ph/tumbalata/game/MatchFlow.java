@@ -2,6 +2,10 @@ package ph.tumbalata.game;
 
 import com.badlogic.gdx.math.Vector2;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
 /**
  * A whole match from the first line of dialogue to the end, in fixed steps: the intro dialogue, the mano that picks
  * the first Taya, Taya choosing the can spot, GAME START, the play itself, and GOOD JOB. No drawing or sound, so the
@@ -204,5 +208,33 @@ public final class MatchFlow {
 
     private void freeze(float seconds) {
         freezeLeft = Math.max(freezeLeft, seconds);
+    }
+
+    // ------------------------------------------------------------------
+    // Network copy
+    // ------------------------------------------------------------------
+
+    /**
+     * The whole match as it is now, for the phones: the host sends this after every step. A phone puts it into its
+     * own flow with {@link #readState} and only draws it (it never calls {@link #step}).
+     */
+    public void writeState(DataOutputStream out) throws IOException {
+        out.writeByte(stage.ordinal());
+        out.writeFloat(stageTime);
+        out.writeBoolean(gameStartShown);
+        out.writeFloat(freezeLeft);
+        match.writeState(out);
+        mano.writeState(out);
+        dialogue.writeState(out);
+    }
+
+    public void readState(DataInputStream in) throws IOException {
+        stage = Stage.values()[in.readByte()];
+        stageTime = in.readFloat();
+        gameStartShown = in.readBoolean();
+        freezeLeft = in.readFloat();
+        match.readState(in);
+        mano.readState(in);
+        dialogue.readState(in);
     }
 }

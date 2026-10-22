@@ -20,7 +20,7 @@ import ph.tumbalata.game.Lobby;
 public final class ClientSession implements Closeable {
     /** Something that happened on the network. */
     public static final class Event {
-        public enum Kind { LOBBY, REJECTED, CLOSED }
+        public enum Kind { LOBBY, GO, STATE, REJECTED, CLOSED }
 
         public final Kind kind;
         /** REJECTED: why. */
@@ -31,6 +31,16 @@ public final class ClientSession implements Closeable {
             this.kind = kind;
             this.reason = reason;
             this.body = body;
+        }
+
+        /** GO: which screen. */
+        public int screen() {
+            return body[0];
+        }
+
+        /** GO: what that screen needs (after the screen byte). STATE: the whole message. */
+        public byte[] body() {
+            return kind == Kind.GO ? java.util.Arrays.copyOfRange(body, 1, body.length) : body;
         }
 
         /** LOBBY: copies the host's room into {@code lobby} and returns which player this phone is. */
@@ -78,6 +88,25 @@ public final class ClientSession implements Closeable {
         return events.poll();
     }
 
+    /** A move on the character select ({@code Protocol.PICK_*}; {@code card} for {@code PICK_CHOOSE}). */
+    public void sendPick(int action, int card) {
+        trySend(Protocol.PICK, new byte[] { (byte) action, (byte) card });
+    }
+
+    /** What this phone's player holds for one match step ({@code InputFrame.pack()}). */
+    public void sendInput(int packedFrame) {
+        trySend(Protocol.INPUT, Protocol.body(o -> o.writeInt(packedFrame)));
+    }
+
+    private void trySend(byte type, byte[] body) {
+        if (!open) return;
+        try {
+            send(type, body);
+        } catch (IOException e) {
+            close(); // the reader notices and reports CLOSED
+        }
+    }
+
     /** Leaves the room (tells the host, then disconnects). */
     public void leave() {
         if (!open) return;
@@ -112,6 +141,10 @@ public final class ClientSession implements Closeable {
                 Protocol.Message m = Protocol.read(in);
                 if (m.type == Protocol.LOBBY) {
                     events.add(new Event(Event.Kind.LOBBY, null, m.body));
+                } else if (m.type == Protocol.GO) {
+                    events.add(new Event(Event.Kind.GO, null, m.body));
+                } else if (m.type == Protocol.STATE) {
+                    events.add(new Event(Event.Kind.STATE, null, m.body));
                 } else if (m.type == Protocol.REJECT) {
                     events.add(new Event(Event.Kind.REJECTED, m.reader().readUTF(), null));
                     open = false;

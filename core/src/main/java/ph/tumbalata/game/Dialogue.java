@@ -2,6 +2,10 @@ package ph.tumbalata.game;
 
 import com.badlogic.gdx.utils.Array;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
 /**
  * The intro dialogue as it plays: which line is up, how much of it has typed out, and holding B to skip. No drawing
  * ({@link DialogueBox} draws it), so the host can run it with the rest of the match.
@@ -128,5 +132,28 @@ public final class Dialogue {
     /** The box's right edge for this line (1 = far right). */
     public static float boxRight(DialogueScript.Line line) {
         return line.speaker < 0 || !isLeft(line.speaker) ? 1f : HALF;
+    }
+
+    // Network copy (the host sends this state; a phone draws its copy). The lines themselves travel once, at the start.
+    void writeState(DataOutputStream out) throws IOException {
+        out.writeByte(index);
+        out.writeFloat(shown);
+        out.writeFloat(skipHeld);
+        out.writeFloat(lineTime);
+        out.writeFloat(time);
+        out.writeBoolean(slides);
+        out.writeBoolean(rises);
+        out.writeBoolean(finished);
+    }
+
+    void readState(DataInputStream in) throws IOException {
+        index = in.readByte();
+        shown = in.readFloat();
+        skipHeld = in.readFloat();
+        lineTime = in.readFloat();
+        time = in.readFloat();
+        slides = in.readBoolean();
+        rises = in.readBoolean();
+        finished = in.readBoolean();
     }
 }

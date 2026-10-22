@@ -13,7 +13,7 @@ import java.io.IOException;
  */
 public final class Protocol {
     /** Bumped whenever the messages change: a phone with another version can't join. */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
     public static final int TCP_PORT = 54555;
     public static final int DISCOVERY_PORT = 54777;
 
@@ -25,12 +25,22 @@ public final class Protocol {
     static final byte HELLO = 1;
     /** Leaving the room. */
     static final byte LEAVE = 2;
+    /** A move on the character select: the action (byte, {@code PICK_*}) and a card (byte, for {@link #PICK_CHOOSE}). */
+    static final byte PICK = 3;
+    /** What this phone's player holds for one match step: {@code InputFrame.pack()} (int). */
+    static final byte INPUT = 4;
+
+    public static final int PICK_LEFT = 1, PICK_RIGHT = 2, PICK_LOCK = 3, PICK_UNLOCK = 4, PICK_CHOOSE = 5;
 
     // Host -> phone
     /** The room: your player number (byte), then {@code Lobby.writeTo}. */
     static final byte LOBBY = 10;
     /** Can't join (or removed): the reason (UTF). The connection closes after it. */
     static final byte REJECT = 11;
+    /** Everyone to this screen: which one (byte), then what it needs (the intro lines, the scores...). */
+    static final byte GO = 12;
+    /** The match after a step: the state, then the events of that step. */
+    static final byte STATE = 13;
 
     /** Longest message accepted (a bad or foreign connection can't make us allocate more). */
     static final int MAX_MESSAGE = 64 * 1024;

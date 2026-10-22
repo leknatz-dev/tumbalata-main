@@ -1,5 +1,8 @@
 package ph.tumbalata.game;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.Random;
 
 /**
@@ -100,5 +103,22 @@ public final class Mano {
         if (ups == 1) return lastUp;
         if (ups == n - 1) return lastDown;
         return -1;
+    }
+
+    // Network copy (the host sends this state; a phone draws its copy)
+    void writeState(DataOutputStream out) throws IOException {
+        for (boolean up : palmUp) out.writeBoolean(up);
+        out.writeByte(phase.ordinal());
+        out.writeFloat(time);
+        out.writeByte(result);
+        out.writeByte(redos);
+    }
+
+    void readState(DataInputStream in) throws IOException {
+        for (int i = 0; i < palmUp.length; i++) palmUp[i] = in.readBoolean();
+        phase = Phase.values()[in.readByte()];
+        time = in.readFloat();
+        result = in.readByte();
+        redos = in.readByte();
     }
 }

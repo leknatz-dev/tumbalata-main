@@ -137,6 +137,7 @@ public class TumbalataGame extends Game {
         input.update();  // once per frame, before the screen reads it
         if (!input.isTextEntry() && Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.M)) audio.toggleMute(); // M = mute (not while typing a name)
         audio.update(Gdx.graphics.getDeltaTime()); // music fades
+        network.update(this); // phones joining, moves, input, where the host sent us
         super.render(); // draws the current screen (and lets it read input, which may request a screen change)
 
         if (pendingScreen != null) {

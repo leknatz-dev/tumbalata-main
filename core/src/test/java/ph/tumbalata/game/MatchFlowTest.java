@@ -190,6 +190,75 @@ class MatchFlowTest {
         assertFalse(first.startsWith("DIALOGUE") || first.startsWith("MANO"), "got into the match: " + first);
     }
 
+    /** A phone's copy: its own players, can, match, mano and dialogue (same lines), never stepped. */
+    private static MatchFlow copyOf(int playerCount, Array<DialogueScript.Line> lines) {
+        Array<Player> ps = new Array<>();
+        for (int id = 0; id < playerCount; id++) {
+            Player p = new Player(id, id, 0f, 0f, GameConstants.PLAYER_SPEED, new PlayerInput(),
+                Match.PLAY_MIN_X, Match.PLAY_MAX_X, Match.PLAY_MIN_Y, Match.PLAY_MAX_Y);
+            p.slipper = new Slipper(0f, 0f);
+            ps.add(p);
+        }
+        MapCollision noWalls = new MapCollision(new Array<>());
+        Match m = new Match(ps, new Can(0f, 0f), noWalls, noWalls, 1f);
+        return new MatchFlow(m, new Mano(playerCount, new Random(99)), new Dialogue(lines));
+    }
+
+    private static byte[] stateOf(MatchFlow f) throws java.io.IOException {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        f.writeState(new java.io.DataOutputStream(bytes));
+        return bytes.toByteArray();
+    }
+
+    @Test
+    void aPhonesCopyMatchesTheHostAfterEveryStep() throws Exception {
+        Array<DialogueScript.Line> script = lines("[3]\nP1: Uy!\nP2: Sige!\nP3: Tara!", 3);
+        newFlow(3, 20f, script);
+        match.setStreetEvents(true, 42L);
+        MatchFlow phone = copyOf(3, script);
+        InputFrame f = new InputFrame();
+        for (int s = 0; s < 60 * 25; s++) {
+            if (!flow.isFrozen()) for (int p = 0; p < players.size; p++) players.get(p).input.apply(scripted(p, s, f));
+            flow.step(DT, true);
+            byte[] host = stateOf(flow);
+            phone.readState(new java.io.DataInputStream(new java.io.ByteArrayInputStream(host)));
+            assertTrue(java.util.Arrays.equals(host, stateOf(phone)), "step " + s + ": the copy matches the host");
+        }
+        assertSame(flow.stage(), phone.stage());
+        assertEquals(match.taya().id, phone.match().taya().id);
+        assertFalse(phone.beforeTaya(), "got into the match");
+    }
+
+    @Test
+    void theEventLogPlaysBackTheSameEventsInOrder() throws Exception {
+        List<String> heard = new ArrayList<>(), played = new ArrayList<>();
+        Match.Events note = new Match.Events() {
+            @Override public void scored(Player p, int points) { heard.add("scored " + p.id + " " + points); }
+            @Override public void tagged(Player t, Player v) { heard.add("tagged " + t.id + " " + v.id); }
+            @Override public void canSpotChosen(Vector2 spot) { heard.add("spot " + spot); }
+        };
+        MatchEventLog log = new MatchEventLog();
+        newFlow(2, 60f, new Array<>());
+        Match.Events rec = log.recording(note);
+        MatchFlow.Listener recFlow = log.recording(new MatchFlow.Listener() {
+            @Override public void stageStarted(MatchFlow.Stage stage) { heard.add("stage " + stage); }
+        });
+        rec.scored(players.get(1), 3);
+        recFlow.stageStarted(MatchFlow.Stage.OUTRO);
+        rec.tagged(players.get(0), players.get(1));
+        rec.canSpotChosen(new Vector2(900f, 100f));
+
+        MatchEventLog.play(log.take(), match, new Match.Events() {
+            @Override public void scored(Player p, int points) { played.add("scored " + p.id + " " + points); }
+            @Override public void tagged(Player t, Player v) { played.add("tagged " + t.id + " " + v.id); }
+            @Override public void canSpotChosen(Vector2 spot) { played.add("spot " + spot); }
+        }, new MatchFlow.Listener() {
+            @Override public void stageStarted(MatchFlow.Stage stage) { played.add("stage " + stage); }
+        });
+        assertEquals(heard, played);
+        assertEquals(0, log.take().length, "taking empties the log");
+    }
+
     @Test
     void passesOnEveryMatchEvent() throws Exception {
         // MatchFlow sees the match's events first; it must pass every one of them on to the screen

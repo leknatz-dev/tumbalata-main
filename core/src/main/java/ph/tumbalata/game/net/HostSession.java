@@ -28,18 +28,28 @@ import ph.tumbalata.game.Lobby;
 public final class HostSession implements Closeable {
     /** Something that happened on the network. */
     public static final class Event {
-        public enum Kind { JOINED, LEFT }
+        public enum Kind { JOINED, LEFT, PICK, INPUT }
 
         public final Kind kind;
         /** Which connection (stays the same while that phone is connected). */
         public final int connection;
         /** JOINED: the name the player set on their phone. */
         public final String name;
+        /** PICK: the action ({@code Protocol.PICK_*}). INPUT: the packed {@code InputFrame}. */
+        public final int value;
+        /** PICK: the card, for {@code PICK_CHOOSE}. */
+        public final int card;
 
         Event(Kind kind, int connection, String name) {
+            this(kind, connection, name, 0, 0);
+        }
+
+        Event(Kind kind, int connection, String name, int value, int card) {
             this.kind = kind;
             this.connection = connection;
             this.name = name;
+            this.value = value;
+            this.card = card;
         }
     }
 
@@ -110,6 +120,20 @@ public final class HostSession implements Closeable {
         }));
     }
 
+    /** Sends every phone in the room to a screen ({@code what} = which one, {@code body} = what it needs). */
+    public void sendGo(int what, byte[] body) {
+        byte[] message = Protocol.body(out -> {
+            out.writeByte(what);
+            out.write(body);
+        });
+        for (Connection c : connections.values()) if (c.joined) c.send(Protocol.GO, message);
+    }
+
+    /** Sends every phone in the room the match after a step (state and events, already put together). */
+    public void sendState(byte[] body) {
+        for (Connection c : connections.values()) if (c.joined) c.send(Protocol.STATE, body);
+    }
+
     /** Tells a phone why it can't play (the room is full...) and closes its connection. */
     public void reject(int connection, String reason) {
         Connection c = connections.get(connection);
@@ -166,7 +190,7 @@ public final class HostSession implements Closeable {
         final int id;
         final Socket socket;
         final DataOutputStream out;
-        private boolean joined;
+        private volatile boolean joined; // read by the game thread too
         private boolean closed;
 
         Connection(int id, Socket socket) throws IOException {
@@ -192,6 +216,12 @@ public final class HostSession implements Closeable {
                         events.add(new Event(Event.Kind.JOINED, id, name));
                     } else if (m.type == Protocol.LEAVE) {
                         break;
+                    } else if (m.type == Protocol.INPUT && joined) {
+                        events.add(new Event(Event.Kind.INPUT, id, null, m.reader().readInt(), 0));
+                    } else if (m.type == Protocol.PICK && joined) {
+                        DataInputStream body = m.reader();
+                        int action = body.readByte();
+                        events.add(new Event(Event.Kind.PICK, id, null, action, body.readByte()));
                     }
                 }
             } catch (IOException e) {

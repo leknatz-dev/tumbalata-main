@@ -14,13 +14,17 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
+import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ScreenUtils;
+
+import ph.tumbalata.game.net.Protocol;
 
 /**
  * "Choose your character" screen: 4 placeholder cards. Every player moves their own cursor with their own pad or keys
  * and locks in with A (B to change their mind). The game starts when everyone is locked in. A character can only be
  * locked by one player; others can still hover over it.
- * The mouse drives Player 1's cursor.
+ * The mouse drives Player 1's cursor. Players on other phones pick on their phone; the host's device applies the moves
+ * and starts the match for everyone (see {@link Network}).
  */
 public class CharacterSelectScreen implements Screen {
     // --- SCREEN SIZE (same as the other menus) ---
@@ -93,7 +97,7 @@ public class CharacterSelectScreen implements Screen {
     public CharacterSelectScreen(TumbalataGame game) {
         this.game = game;
         this.lobby = game.lobby();
-        lobby.unlockAll(); // everyone picks (again), starting on the card they had
+        if (!game.network().isClient()) lobby.unlockAll(); // everyone picks (again), starting on the card they had
         this.playerCount = lobby.size();
         this.names = lobby.names();
         this.tagWidths = new float[playerCount];
@@ -378,10 +382,17 @@ public class CharacterSelectScreen implements Screen {
         InputManager.MenuInput in = input.menu(); // used for F11 and Esc only; picking uses each player's own input
         if (in.fullscreen) game.toggleFullscreen();
         if (leaving || input.isMenuLocked()) return; // ignore input while a screen transition plays
+        Network network = game.network();
+        if (network.isClient()) {
+            phoneInput(input, network);
+            return;
+        }
 
         boolean back = in.back; // Esc
         for (int p = 0; p < playerCount; p++) {
-            PlayerInput pin = input.player(p);
+            Lobby.Slot slot = lobby.slot(p);
+            if (slot.isRemote()) continue; // picks on their own phone (Network applies the moves)
+            PlayerInput pin = input.player(slot.localInput());
             if (isLocked(p)) {
                 if (pin.bPressed) {
                     lobby.unlock(p);
@@ -400,21 +411,13 @@ public class CharacterSelectScreen implements Screen {
         if (back) {
             leaving = true;
             game.audio().play(Audio.Sfx.UI_BACK);
+            network.hostGo(Network.Go.WAITING_ROOM, new byte[0]); // the phones come along
             game.changeScreen(new WaitingRoomScreen(game));
             return;
         }
 
-        mouse.set(Gdx.input.getX(), Gdx.input.getY());
-        viewport.unproject(mouse);
-        boolean mouseMoved = Gdx.input.getX() != lastMouseX || Gdx.input.getY() != lastMouseY;
-        lastMouseX = Gdx.input.getX();
-        lastMouseY = Gdx.input.getY();
-
-        int hovered = -1;
-        for (int i = 0; i < cardBounds.length; i++) {
-            if (cardBounds[i].contains(mouse.x, mouse.y)) hovered = i;
-        }
-        // The mouse drives Player 1: hover to move, click to lock in
+        int hovered = hoveredCard();
+        // The mouse drives Player 1 (the host): hover to move, click to lock in
         if (!isLocked(0)) {
             if (hovered != -1 && mouseMoved && card(0) != hovered) {
                 lobby.choose(0, hovered);
@@ -429,9 +432,53 @@ public class CharacterSelectScreen implements Screen {
         if (lobby.allLocked()) startGame();
     }
 
+    private boolean mouseMoved;
+
+    /** The card under the mouse (or finger), or -1. Also notes whether the mouse moved this frame. */
+    private int hoveredCard() {
+        mouse.set(Gdx.input.getX(), Gdx.input.getY());
+        viewport.unproject(mouse);
+        mouseMoved = Gdx.input.getX() != lastMouseX || Gdx.input.getY() != lastMouseY;
+        lastMouseX = Gdx.input.getX();
+        lastMouseY = Gdx.input.getY();
+        for (int i = 0; i < cardBounds.length; i++) if (cardBounds[i].contains(mouse.x, mouse.y)) return i;
+        return -1;
+    }
+
+    /**
+     * A phone in someone else's room: this phone's player picks with its own controls (or by tapping a card), and the
+     * moves go to the host, which applies them and sends the room back. The host starts the match.
+     */
+    private void phoneInput(InputManager input, Network network) {
+        int me = network.myId();
+        if (me < 0 || me >= lobby.size()) return;
+        PlayerInput pin = input.player(0);
+        if (isLocked(me)) {
+            if (pin.bPressed) network.sendPick(Protocol.PICK_UNLOCK, 0);
+            return;
+        }
+        if (pin.leftPressed) network.sendPick(Protocol.PICK_LEFT, 0);
+        if (pin.rightPressed) network.sendPick(Protocol.PICK_RIGHT, 0);
+        if (pin.aPressed || pin.startPressed) network.sendPick(Protocol.PICK_LOCK, 0);
+        int hovered = hoveredCard();
+        if (hovered != -1 && Gdx.input.justTouched()) {
+            network.sendPick(Protocol.PICK_CHOOSE, hovered);
+            network.sendPick(Protocol.PICK_LOCK, 0);
+        } else if (hovered != -1 && mouseMoved && hovered != lastSentCard) {
+            network.sendPick(Protocol.PICK_CHOOSE, hovered);
+            lastSentCard = hovered;
+        }
+        if (pin.leftPressed || pin.rightPressed) game.audio().play(Audio.Sfx.UI_MOVE);
+    }
+
+    private int lastSentCard = -1;
+
+    /** Host: everyone is locked in. Picks the intro dialogue and sends everyone to the match. */
     private void startGame() {
         leaving = true;
-        game.changeScreen(new GameScreen(lobby));
+        Array<DialogueScript.Line> lines = GameScreen.introLines(lobby.size(), lobby.names());
+        game.network().hostGo(Network.Go.MATCH, Network.writeLines(lines));
+        game.changeScreen(new GameScreen(lobby, lines, false));
     }
 
     @Override
