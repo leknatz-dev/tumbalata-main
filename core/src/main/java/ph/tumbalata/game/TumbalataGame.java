@@ -98,6 +98,7 @@ public class TumbalataGame extends Game {
         transition = new ScreenTransition();
         if (controllerSetup != null) controllerSetup.run();
         input = new InputManager();
+        Gdx.input.setCatchKey(com.badlogic.gdx.Input.Keys.BACK, true); // a phone's back button goes back in the game, not out of it
         audio = new Audio();
         settings = new GameSettings();
         lobby.settings.streetEvents = settings.streetEvents();

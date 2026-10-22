@@ -160,6 +160,7 @@ public class GameScreen implements Screen {
     private Mano mano;           // the flow's mano: picks the first Taya before GAME START
     private float manoFade = 0f; // 0..1, the mano widget and the blur behind it
     private PauseMenu pauseMenu;
+    private TouchControlsView touchView;
     private boolean paused = false;
     private boolean pauseJustOpened = false; // the button that opened it must not also press a menu button
     private boolean exiting = false;
@@ -270,6 +271,8 @@ public class GameScreen implements Screen {
         if (Gdx.files.internal("mano/hand_fist.png").exists()) handFist = loadPixelTexture("mano/hand_fist.png");
         if (Gdx.files.internal("mano/hand_up.png").exists()) handUp = loadPixelTexture("mano/hand_up.png");
         if (Gdx.files.internal("mano/hand_down.png").exists()) handDown = loadPixelTexture("mano/hand_down.png");
+        touchView = new TouchControlsView();
+        liveInputs.touch().setEnabled(TouchControls.wantedOn(Gdx.app.getType())); // on a phone: joystick and buttons
         pauseMenu = new PauseMenu();
         pauseMenu.layout(VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f);
         effects = new CourtEffects();
@@ -539,6 +542,7 @@ public class GameScreen implements Screen {
         if (manoFade > 0f) drawMano(manoFade);
         if (dialogueFade > 0f) dialogueBox.draw(spriteBatch, shapeRenderer, font, hints, VIEW_X, VIEW_Y, VIEW_W, dialogueFade);
         if (pauseFade > 0f) pauseMenu.draw(shapeRenderer, spriteBatch, font, pauseLabels(), pauseFade);
+        if (pauseFade == 0f) touchView.draw(liveInputs.touch(), spriteBatch, shapeRenderer); // last: over everything
     }
 
     /** Everything on the court: map, shadows, trash, dust, slippers, players, can, ring and the labels over them. */
@@ -1514,7 +1518,10 @@ public class GameScreen implements Screen {
 
     @Override public void pause() {}
     @Override public void resume() {}
-    @Override public void hide() {}
+    @Override
+    public void hide() {
+        liveInputs.touch().setEnabled(false); // menus take taps, not button presses
+    }
 
     @Override
     public void dispose() {
@@ -1533,6 +1540,7 @@ public class GameScreen implements Screen {
         for (Texture t : new Texture[] { handFist, handUp, handDown, manoBack, manoSelect }) if (t != null) t.dispose();
         if (dialogueBox != null) dialogueBox.dispose();
         if (hints != null) hints.dispose();
+        if (touchView != null) touchView.dispose();
         if (audio != null) audio.playBackgroundMusic(null);
         if (effects != null) effects.dispose();
         if (blur != null) blur.dispose();

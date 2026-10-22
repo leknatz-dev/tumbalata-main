@@ -34,10 +34,11 @@ public final class InputManager {
         }
     }
 
-    // Player 1: WASD. A = Space, B = E, Select = R.
+    // Player 1: WASD. A = Space, B = E, Select = R or a phone's back button (caught by TumbalataGame, so it doesn't close
+    // the app).
     private static final KeyScheme KEYS_P1 = new KeyScheme(
         new int[]{Input.Keys.W}, new int[]{Input.Keys.S}, new int[]{Input.Keys.A}, new int[]{Input.Keys.D},
-        new int[]{Input.Keys.SPACE}, new int[]{Input.Keys.E}, new int[]{Input.Keys.R}, new int[]{});
+        new int[]{Input.Keys.SPACE}, new int[]{Input.Keys.E}, new int[]{Input.Keys.R, Input.Keys.BACK}, new int[]{});
 
     // Player 2: arrows. Space and E work here too (so one person can test both roles, like before), plus Enter / Right Shift.
     private static final KeyScheme KEYS_P2 = new KeyScheme(
@@ -75,6 +76,9 @@ public final class InputManager {
     private final PlayerInput[] players = new PlayerInput[MAX_PLAYERS];
     private final boolean[] prevKb = new boolean[MAX_PLAYERS * 8]; // previous keyboard state per slot, for edges
 
+    private final TouchControls touch = new TouchControls(); // a phone's on-screen joystick and buttons (this device's player)
+    private final boolean[] touchDown = new boolean[TouchControls.MAX_POINTERS];
+    private final float[] touchX = new float[TouchControls.MAX_POINTERS], touchY = new float[TouchControls.MAX_POINTERS];
     private final MenuInput menu = new MenuInput();
     private boolean menuLocked = false;
     private boolean textEntry = false; // typing a name: keyboard keys are text, not player controls
@@ -152,6 +156,11 @@ public final class InputManager {
         return players[slot];
     }
 
+    /** The on-screen controls (for drawing them, and switching them on for a match). */
+    public TouchControls touch() {
+        return touch;
+    }
+
     /** Merged input for the menus (any controller, or the keyboard). */
     public MenuInput menu() {
         return menu;
@@ -177,6 +186,12 @@ public final class InputManager {
 
     /** Call once per frame, before the screen renders. */
     public void update() {
+        for (int i = 0; i < TouchControls.MAX_POINTERS; i++) {
+            touchDown[i] = Gdx.input.isTouched(i);
+            touchX[i] = Gdx.input.getX(i);
+            touchY[i] = Gdx.input.getY(i);
+        }
+        touch.update(touchDown, touchX, touchY, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         for (int slot = 0; slot < MAX_PLAYERS; slot++) {
             Pad pad = pads[slot];
             readPad(pad);
@@ -280,6 +295,10 @@ public final class InputManager {
             select |= anyKey(ks.select);
             start |= anyKey(ks.start);
         }
+        if (slot == 0 && touch.isEnabled()) { // a phone's on-screen buttons play as this device's player
+            a |= touch.a;
+            b |= touch.b;
+        }
 
         // edges against the previous merged state (keyboard + pad together)
         int o = slot * 8;
@@ -306,6 +325,10 @@ public final class InputManager {
         }
         in.moveX = mx;
         in.moveY = my;
+        if (slot == 0 && touch.isEnabled() && (touch.moveX != 0f || touch.moveY != 0f)) { // the joystick: any direction, any speed
+            in.moveX = touch.moveX;
+            in.moveY = touch.moveY;
+        }
     }
 
     public void dispose() {
@@ -338,7 +361,7 @@ public final class InputManager {
             boolean kConfirm = Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
                 || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
                 || Gdx.input.isKeyJustPressed(Input.Keys.E);
-            boolean kBack = Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE);
+            boolean kBack = Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) || Gdx.input.isKeyJustPressed(Input.Keys.BACK);
 
             up = kUp; down = kDown; left = kLeft; right = kRight; confirm = kConfirm; back = kBack;
             fullscreen = Gdx.input.isKeyJustPressed(Input.Keys.F11);
