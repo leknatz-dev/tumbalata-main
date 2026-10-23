@@ -2,7 +2,23 @@
 //   gradlew.bat android:assembleDebug        (android/build/outputs/apk/debug/android-debug.apk)
 // or put it straight on a phone plugged in by USB (with USB debugging on) with
 //   gradlew.bat android:installDebug
+// The build to share with friends (signed with the release key, saved as dist/Tumbalata-<version>.apk):
+//   gradlew.bat android:shareApk
 apply plugin: 'com.android.application'
+
+// The version comes from core's GameVersion.java, so the app, the main menu and the room check always agree.
+def gameVersionSource = file('../core/src/main/java/ph/tumbalata/game/GameVersion.java').text
+ext.gameBuild = (gameVersionSource =~ /int BUILD = (\d+);/)[0][1].toInteger()
+ext.gameVersionName = (gameVersionSource =~ /String NAME = "([^"]+)";/)[0][1]
+
+// The release key's details, in <home>/.tumbalata-keys/release.properties (storeFile, storePassword, keyAlias,
+// keyPassword). Not in the project, so it never goes to GitHub. Back that folder up: without it, no more updates.
+def releaseKeysFile = new File(System.getProperty('user.home'), '.tumbalata-keys/release.properties')
+ext.releaseKeys = null
+if (releaseKeysFile.exists()) {
+  ext.releaseKeys = new Properties()
+  releaseKeysFile.withInputStream { releaseKeys.load(it) }
+}
 
 android {
   namespace = 'ph.tumbalata.game'
@@ -22,8 +38,21 @@ android {
     applicationId = 'ph.tumbalata.game'
     minSdk = androidMinSdk.toInteger()
     targetSdk = androidCompileSdk.toInteger()
-    versionCode = 1
-    versionName = "$projectVersion"
+    versionCode = gameBuild
+    versionName = gameVersionName
+  }
+
+  // The release key: kept outside the project (see releaseKeys below). Every shared build must be signed with the same
+  // key, or phones refuse to install it as an update.
+  signingConfigs {
+    release {
+      if (releaseKeys != null) {
+        storeFile = file(releaseKeys.getProperty('storeFile'))
+        storePassword = releaseKeys.getProperty('storePassword')
+        keyAlias = releaseKeys.getProperty('keyAlias')
+        keyPassword = releaseKeys.getProperty('keyPassword')
+      }
+    }
   }
 
   compileOptions {
@@ -39,8 +68,12 @@ android {
   }
 
   buildTypes {
+    debug {
+      applicationIdSuffix = '.dev' // the USB test build sits next to the shared one instead of clashing with it
+    }
     release {
       minifyEnabled = false
+      if (releaseKeys != null) signingConfig = signingConfigs.release
     }
   }
 }
@@ -85,4 +118,17 @@ tasks.register('copyAndroidNatives') {
 
 tasks.matching { it.name.contains('merge') && it.name.contains('JniLibFolders') }.configureEach {
   it.dependsOn 'copyAndroidNatives'
+}
+
+// The build to share: the signed release app, copied to dist/ with the version in its name.
+tasks.register('shareApk', Copy) {
+  dependsOn 'assembleRelease'
+  doFirst {
+    if (releaseKeys == null) {
+      throw new GradleException("No release key: expected ${releaseKeysFile}. See docs/PRD.md, Sharing with friends.")
+    }
+  }
+  from layout.buildDirectory.file('outputs/apk/release/android-release.apk')
+  into rootProject.file('dist')
+  rename { "Tumbalata-${gameVersionName}.apk" }
 }

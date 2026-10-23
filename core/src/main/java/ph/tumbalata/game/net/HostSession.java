@@ -1,5 +1,7 @@
 package ph.tumbalata.game.net;
 
+import ph.tumbalata.game.GameVersion;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.Closeable;
@@ -209,7 +211,9 @@ public final class HostSession implements Closeable {
                         int version = body.readInt();
                         String name = body.readUTF();
                         if (version != Protocol.VERSION) {
-                            send(Protocol.REJECT, Protocol.body(o -> o.writeUTF("THIS ROOM IS ON ANOTHER VERSION")));
+                            String why = version < Protocol.VERSION ? "UPDATE YOUR GAME - THIS ROOM IS ON " + GameVersion.NAME
+                                : "THIS ROOM IS ON AN OLDER VERSION - " + GameVersion.NAME;
+                            send(Protocol.REJECT, Protocol.body(o -> o.writeUTF(why)));
                             break;
                         }
                         joined = true;

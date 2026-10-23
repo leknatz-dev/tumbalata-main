@@ -116,9 +116,15 @@ class LanSessionTest {
     }
 
     @Test
-    void answersFromOtherVersionsAreIgnored() {
-        assertEquals(null, LanDiscovery.parseReply("TUMBALATA!|999|54555|1|4|OLD ROOM", HERE));
+    void roomsOnOtherBuildsAreListedButNotJoinable() {
+        LanDiscovery.Room other = LanDiscovery.parseReply("TUMBALATA!|999|54555|1|4|9.9.9|NEW ROOM", HERE);
+        assertNotNull(other);
+        assertEquals("NEW ROOM", other.name);
+        assertEquals("9.9.9", other.versionName);
+        assertEquals(false, other.sameVersion());
         assertEquals(null, LanDiscovery.parseReply("SOMETHING ELSE", HERE));
-        assertNotNull(LanDiscovery.parseReply(new String(LanDiscovery.reply(54555, 1, 4, "A|B")), HERE), "a | in the name");
+        LanDiscovery.Room ours = LanDiscovery.parseReply(new String(LanDiscovery.reply(54555, 1, 4, "A|B")), HERE);
+        assertEquals("A|B", ours.name, "a | in the name");
+        assertEquals(true, ours.sameVersion());
     }
 }

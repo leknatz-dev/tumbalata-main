@@ -1,5 +1,7 @@
 package ph.tumbalata.game.net;
 
+import ph.tumbalata.game.GameVersion;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -28,8 +30,13 @@ public final class LanDiscovery {
         public final int port;
         public final int players;
         public final int roomSize;
+        /** The host's game build, and its name (like 0.1.0). */
+        public final int build;
+        public final String versionName;
 
-        Room(String name, InetAddress address, int port, int players, int roomSize) {
+        Room(String name, InetAddress address, int port, int players, int roomSize, int build, String versionName) {
+            this.build = build;
+            this.versionName = versionName;
             this.name = name;
             this.address = address;
             this.port = port;
@@ -41,6 +48,11 @@ public final class LanDiscovery {
             return players >= roomSize;
         }
 
+        /** On the same build as this game: only then can we join. */
+        public boolean sameVersion() {
+            return build == Protocol.VERSION;
+        }
+
         @Override
         public String toString() {
             return name + " " + players + "/" + roomSize + " @" + address.getHostAddress() + ":" + port;
@@ -49,19 +61,23 @@ public final class LanDiscovery {
 
     private LanDiscovery() {}
 
-    /** The host's answer to a probe: version, TCP port, players, room size, room name. */
+    /**
+     * The host's answer to a probe: build, TCP port, players, room size, version name, room name. Keep this layout in
+     * every build, so a game on another build can still list the room and say who has to update.
+     */
     static byte[] reply(int tcpPort, int players, int roomSize, String roomName) {
-        String text = Protocol.REPLY + "|" + Protocol.VERSION + "|" + tcpPort + "|" + players + "|" + roomSize + "|" + roomName;
+        String text = Protocol.REPLY + "|" + Protocol.VERSION + "|" + tcpPort + "|" + players + "|" + roomSize + "|"
+            + GameVersion.NAME + "|" + roomName;
         return text.getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Reads a host's answer, or null if it isn't one (or another version). */
+    /** Reads a host's answer (on any build), or null if it isn't one. */
     static Room parseReply(String text, InetAddress from) {
-        String[] parts = text.split("\\|", 6);
-        if (parts.length < 6 || !parts[0].equals(Protocol.REPLY)) return null;
+        String[] parts = text.split("\\|", 7);
+        if (parts.length < 7 || !parts[0].equals(Protocol.REPLY)) return null;
         try {
-            if (Integer.parseInt(parts[1]) != Protocol.VERSION) return null;
-            return new Room(parts[5], from, Integer.parseInt(parts[2]), Integer.parseInt(parts[3]), Integer.parseInt(parts[4]));
+            return new Room(parts[6], from, Integer.parseInt(parts[2]), Integer.parseInt(parts[3]), Integer.parseInt(parts[4]),
+                Integer.parseInt(parts[1]), parts[5]);
         } catch (NumberFormatException e) {
             return null;
         }

@@ -1,5 +1,7 @@
 package ph.tumbalata.game.net;
 
+import ph.tumbalata.game.GameVersion;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -12,8 +14,11 @@ import java.io.IOException;
  * message itself.
  */
 public final class Protocol {
-    /** Bumped whenever the messages change: a phone with another version can't join. */
-    public static final int VERSION = 2;
+    /**
+     * The game build ({@link GameVersion#BUILD}). Phones only play together on the same build: any change to the rules
+     * or the messages can break a match between two builds.
+     */
+    public static final int VERSION = GameVersion.BUILD;
     public static final int TCP_PORT = 54555;
     public static final int DISCOVERY_PORT = 54777;
 

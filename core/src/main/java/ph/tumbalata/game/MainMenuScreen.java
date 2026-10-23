@@ -14,6 +14,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.ScreenUtils;
 
 public class MainMenuScreen implements Screen {
@@ -154,6 +155,13 @@ public class MainMenuScreen implements Screen {
             font.draw(batch, "TUMBALATA", (MENU_WIDTH - layout.width) / 2f, TITLE_CENTER_Y + layout.height / 2f + titleBob);
             font.getData().setScale(1f);
         }
+
+        font.getData().setScale(0.9f); // which build this is, bottom right: friends can check they have the same one
+        font.setColor(1f, 1f, 1f, 0.6f);
+        font.draw(batch, "V" + GameVersion.NAME, viewport.left() + viewport.visibleWidth() - 110f, viewport.bottom() + 24f,
+            100f, Align.right, false);
+        font.setColor(Color.WHITE);
+        font.getData().setScale(1f);
 
         if (startTexture != null) batch.draw(startTexture, buttonBounds[0].x, buttonBounds[0].y, BUTTON_W, BUTTON_H);
         else drawLabel(0);

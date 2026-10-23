@@ -265,6 +265,12 @@ public class ServerScreen implements Screen {
     }
 
     private void join(LanDiscovery.Room room) {
+        if (!room.sameVersion()) {
+            say(room.build > Protocol.VERSION ? "UPDATE YOUR GAME - THIS ROOM IS ON " + room.versionName
+                : "THIS ROOM IS ON AN OLDER VERSION - " + room.versionName);
+            game.audio().play(Audio.Sfx.UI_DENY);
+            return;
+        }
         if (room.isFull()) {
             say("THAT ROOM IS FULL");
             game.audio().play(Audio.Sfx.UI_DENY);
@@ -392,8 +398,10 @@ public class ServerScreen implements Screen {
             Rectangle r = itemBounds(i + FIRST_ROOM);
             float mid = r.y + ROOM_H / 2f;
             text("HOST: " + room.name, r.x + 12f, mid + 10f, 1.4f, Color.WHITE, Align.left, 0f);
-            text(room.players + "/" + room.roomSize + (room.isFull() ? "  FULL" : "  JOIN"), r.x + ROW_W - 12f, mid + 8f,
-                1.1f, room.isFull() ? Color.SALMON : Color.GOLD, Align.right, 0f);
+            boolean open = room.sameVersion() && !room.isFull();
+            String state = !room.sameVersion() ? "  V" + room.versionName : room.isFull() ? "  FULL" : "  JOIN";
+            text(room.players + "/" + room.roomSize + state, r.x + ROW_W - 12f, mid + 8f,
+                1.1f, open ? Color.GOLD : Color.SALMON, Align.right, 0f);
         }
         if (messageTime > 0f) text(message, 0f, HINT_Y + 36f, 1.1f, Color.SALMON, Align.center, MENU_WIDTH);
         batch.end();

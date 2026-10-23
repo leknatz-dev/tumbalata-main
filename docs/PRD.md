@@ -435,6 +435,25 @@ The `lwjgl3` run task uses the `assets` folder as its working directory. Gradle 
 
 If the Gradle import keeps failing, check that two copies of the same asset do not exist under `assets/`, since the `lwjgl3` module adds that folder as a resource directory.
 
+## Sharing with friends (itch.io)
+
+Friends get the Android app from the game's itch.io page (restricted, so only people with the link and password see it) and install it by hand.
+
+**The version** lives in one place, `core/src/main/java/ph/tumbalata/game/GameVersion.java`: `BUILD` (goes up by one with every shared build; Android only installs an update with a higher number) and `NAME` (what players see, like 0.1.0). The Android app reads both from that file, the main menu shows `V0.1.0` in the bottom-right corner, and phones only play together on the same build: the server screen lists rooms on other builds with their version and says who has to update, and the host refuses a phone on another build.
+
+**The release key** is in `C:\Users\TAN\.tumbalata-keys\` (`tumbalata-release.jks` and `release.properties` with its passwords), outside the project so it never goes to GitHub. **Back up that folder** (a USB stick and a private cloud folder): every update must be signed with this key. Without it, friends have to uninstall the game and install it again, and any saved settings are lost.
+
+**Sharing a new build:**
+
+1. Raise `BUILD` by one and set the new `NAME` in `GameVersion.java`.
+2. `gradlew.bat android:shareApk` builds the signed app as `dist/Tumbalata-<NAME>.apk`.
+3. Upload it on the itch.io page (Edit game → Uploads), tick **Android**, and remove the old file.
+4. Commit, so the build is tied to its code.
+
+**Test builds over USB** (`android:installDebug`) are a separate app (`ph.tumbalata.game.dev`, debug key), so they sit next to the shared one instead of clashing with it. They both show as Tumbalata on the phone.
+
+**Friends installing:** open the itch.io page on the phone, download the APK, and allow the browser to install unknown apps when Android asks. For an update, download the new APK and install it over the old one. Everyone has to be on the same Wi-Fi to play.
+
 ## Known issues and risks
 
 The most important gap is that the Thrower can never cross the throw line, so two core rules cannot happen yet. The rest are smaller or are decisions waiting on the owner.
