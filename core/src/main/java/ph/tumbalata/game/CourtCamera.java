@@ -3,15 +3,20 @@ package ph.tumbalata.game;
 /**
  * Where the match screen looks: the whole court ({@link #wide()}), or close up on this phone's player and the can
  * ({@link #follow}). Close up it zooms in as far as {@link #CLOSEST} while the two are near each other, and out (up to
- * {@link #WIDEST_FOLLOW}) to keep both in view; past that the can goes off-screen (the screen points to it) but the
- * player never does. It eases between views, and never shows past the edges of the map. No drawing: the screen sets
- * its camera from {@link #x}, {@link #y} and {@link #zoom} (1 = the whole court, 0.5 = twice as close).
+ * {@link #WIDEST_FOLLOW}) to keep both in view; Taya always sees more ({@link #TAYA_CLOSEST}). Past that the can goes
+ * off-screen (the screen points to it) but the player never does. It eases between views, and never shows past the
+ * edges of the map. No drawing: the screen sets its camera from {@link #x}, {@link #y} and {@link #zoom} (1 = the whole
+ * court, 0.5 = twice as close).
  */
 public final class CourtCamera {
     /** As close as it gets (1.8x the whole-court view). */
     static final float CLOSEST = 0.55f;
     /** As wide as it gets while following (still closer than the whole court). */
     static final float WIDEST_FOLLOW = 0.85f;
+    /** Taya sees more of the court than the Throwers (their advantage for guarding the can): zoomed 3/5 as close. */
+    static final float TAYA_CLOSEST = CLOSEST * 5f / 3f;
+    /** Taya, as wide as it gets: the whole court. */
+    static final float TAYA_WIDEST = 1f;
     /** Room kept around the player and the can (world units). */
     static final float PADDING = 170f;
     /** The middle of the view leans this much towards the player (0 = halfway to the can, 1 = on the player). */
@@ -41,10 +46,10 @@ public final class CourtCamera {
         targetZoom = 1f;
     }
 
-    /** Aim for the player at (px, py) and the can at (cx, cy). */
-    public void follow(float px, float py, float cx, float cy) {
+    /** Aim for the player at (px, py) and the can at (cx, cy). {@code taya}: that player is Taya (a wider view). */
+    public void follow(float px, float py, float cx, float cy, boolean taya) {
         float needed = Math.max((Math.abs(px - cx) + 2f * PADDING) / viewW, (Math.abs(py - cy) + 2f * PADDING) / viewH);
-        targetZoom = Math.max(CLOSEST, Math.min(WIDEST_FOLLOW, needed));
+        targetZoom = taya ? Math.max(TAYA_CLOSEST, Math.min(TAYA_WIDEST, needed)) : Math.max(CLOSEST, Math.min(WIDEST_FOLLOW, needed));
         float halfW = targetZoom * viewW / 2f, halfH = targetZoom * viewH / 2f;
         float mx = cx + (px - cx) * PLAYER_WEIGHT, my = cy + (py - cy) * PLAYER_WEIGHT;
         // The player always stays in view, PADDING from the edge (if the can doesn't fit, it's the can that goes)

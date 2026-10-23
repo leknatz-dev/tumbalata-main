@@ -23,7 +23,7 @@ class CourtCameraTest {
     @Test
     void closeToTheCanItZoomsInAsFarAsItGoes() {
         CourtCamera c = camera();
-        c.follow(700f, 300f, 760f, 300f);
+        c.follow(700f, 300f, 760f, 300f, false);
         c.snap();
         assertEquals(CourtCamera.CLOSEST, c.zoom, 0.001f);
         assertTrue(c.sees(700f, 300f, 0f) && c.sees(760f, 300f, 0f), "both in view");
@@ -32,7 +32,7 @@ class CourtCameraTest {
     @Test
     void fartherApartItZoomsOutToKeepBoth() {
         CourtCamera c = camera();
-        c.follow(400f, 200f, 900f, 200f);
+        c.follow(400f, 200f, 900f, 200f, false);
         c.snap();
         assertTrue(c.zoom > CourtCamera.CLOSEST && c.zoom <= CourtCamera.WIDEST_FOLLOW);
         assertTrue(c.sees(400f, 200f, 0f), "the player");
@@ -42,7 +42,7 @@ class CourtCameraTest {
     @Test
     void tooFarApartThePlayerStaysAndTheCanGoes() {
         CourtCamera c = camera();
-        c.follow(150f, 100f, 1250f, 500f);
+        c.follow(150f, 100f, 1250f, 500f, false);
         c.snap();
         assertEquals(CourtCamera.WIDEST_FOLLOW, c.zoom, 0.001f);
         assertTrue(c.sees(150f, 100f, 0f), "never loses the player");
@@ -50,9 +50,23 @@ class CourtCameraTest {
     }
 
     @Test
+    void tayaSeesMoreOfTheCourtThanAThrower() {
+        CourtCamera thrower = camera(), taya = camera();
+        thrower.follow(700f, 300f, 760f, 300f, false);
+        taya.follow(700f, 300f, 760f, 300f, true);
+        thrower.snap();
+        taya.snap();
+        assertEquals(CourtCamera.TAYA_CLOSEST, taya.zoom, 0.001f);
+        assertEquals(5f / 3f, taya.zoom / thrower.zoom, 0.001f, "zoomed 3/5 as close");
+        taya.follow(150f, 100f, 1250f, 500f, true);
+        taya.snap();
+        assertEquals(CourtCamera.TAYA_WIDEST, taya.zoom, 0.001f, "far from the can: the whole court");
+    }
+
+    @Test
     void neverShowsPastTheMap() {
         CourtCamera c = camera();
-        c.follow(20f, -40f, 60f, -30f); // a corner
+        c.follow(20f, -40f, 60f, -30f, false); // a corner
         c.snap();
         float halfW = c.zoom * 1408f / 2f, halfH = c.zoom * 768f / 2f;
         assertTrue(c.x - halfW >= -0.01f && c.y - halfH >= -64.01f);
@@ -61,7 +75,7 @@ class CourtCameraTest {
     @Test
     void itEasesInsteadOfJumping() {
         CourtCamera c = camera();
-        c.follow(700f, 300f, 760f, 300f);
+        c.follow(700f, 300f, 760f, 300f, false);
         c.update(1f / 60f);
         assertTrue(c.zoom < 1f && c.zoom > 0.9f, "a little closer after one frame: " + c.zoom);
         for (int i = 0; i < 300; i++) c.update(1f / 60f);
@@ -72,7 +86,7 @@ class CourtCameraTest {
     void mapsWorldPointsToTheFixedLayer() {
         CourtCamera c = camera();
         assertEquals(100f, c.toScreenX(100f), 0.001f, "whole court: the same place");
-        c.follow(700f, 300f, 760f, 300f);
+        c.follow(700f, 300f, 760f, 300f, false);
         c.snap();
         assertEquals(704f, c.toScreenX(c.x), 0.001f, "the middle of the view is the middle of the screen");
     }

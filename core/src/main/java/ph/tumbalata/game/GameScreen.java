@@ -1224,7 +1224,8 @@ public class GameScreen implements Screen {
     private void aimCamera() {
         int me = phone ? network.myId() : followId; // a phone learns which player it is from the host
         if (me >= 0 && me < views.length && flow.stage() == MatchFlow.Stage.PLAYING) {
-            courtCamera.follow(views[me].drawPos.x, views[me].drawPos.y, canView.drawPos.x, canView.drawPos.y + canView.drawZ);
+            boolean taya = match.taya().id == me; // Taya sees more of the court
+            courtCamera.follow(views[me].drawPos.x, views[me].drawPos.y, canView.drawPos.x, canView.drawPos.y + canView.drawZ, taya);
         } else {
             courtCamera.wide();
         }
