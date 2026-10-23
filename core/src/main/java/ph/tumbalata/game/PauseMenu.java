@@ -20,7 +20,7 @@ public final class PauseMenu {
         RESUME, RESTART_ROUND, SOUND, STREET_EVENTS, EXIT
     }
 
-    private static final Item[] ITEMS = Item.values();
+    private Item[] items = Item.values(); // the buttons shown, top to bottom
 
     // --- LAYOUT (match-screen world units) ---
     private static final float PANEL_SIZE = 400f;
@@ -35,16 +35,28 @@ public final class PauseMenu {
     private static final Color BUTTON_SELECTED = new Color(0.95f, 0.78f, 0.25f, 1f);
 
     private final Rectangle panel = new Rectangle();
-    private final Rectangle[] buttons = new Rectangle[ITEMS.length];
+    private Rectangle[] buttons = new Rectangle[items.length];
+    private float centreX, centreY;
     private final GlyphLayout layout = new GlyphLayout();
     private int selected = 0;
 
     public PauseMenu() {
-        for (int i = 0; i < ITEMS.length; i++) buttons[i] = new Rectangle();
+        for (int i = 0; i < items.length; i++) buttons[i] = new Rectangle();
+    }
+
+    /** Shows only these buttons, in this order (a match with other phones has no RESTART ROUND, for example). */
+    public void setItems(Item... shown) {
+        items = shown;
+        buttons = new Rectangle[shown.length];
+        for (int i = 0; i < shown.length; i++) buttons[i] = new Rectangle();
+        selected = 0;
+        layout(centreX, centreY);
     }
 
     /** Lays the panel out centred on (cx, cy). */
     public void layout(float cx, float cy) {
+        centreX = cx;
+        centreY = cy;
         panel.set(cx - PANEL_SIZE / 2f, cy - PANEL_SIZE / 2f, PANEL_SIZE, PANEL_SIZE);
         float y = panel.y + panel.height - TITLE_SPACE - BUTTON_H;
         for (Rectangle b : buttons) {
@@ -67,24 +79,25 @@ public final class PauseMenu {
      */
     public Item handle(InputManager.MenuInput in, Vector2 mouse, boolean mouseMoved, boolean clicked, Audio audio) {
         int before = selected;
-        if (in.up) selected = (selected + ITEMS.length - 1) % ITEMS.length;
-        if (in.down) selected = (selected + 1) % ITEMS.length;
+        if (in.up) selected = (selected + items.length - 1) % items.length;
+        if (in.down) selected = (selected + 1) % items.length;
 
         int hovered = -1;
         for (int i = 0; i < buttons.length; i++) if (buttons[i].contains(mouse.x, mouse.y)) hovered = i;
         if (hovered >= 0 && (mouseMoved || clicked)) selected = hovered;
         if (selected != before) audio.play(Audio.Sfx.UI_MOVE);
 
-        if (in.confirm || (clicked && hovered >= 0)) return ITEMS[selected];
+        if (in.confirm || (clicked && hovered >= 0)) return items[selected];
         if (in.back) return Item.RESUME;
         return null;
     }
 
     /**
      * Draws the panel. Call outside any batch/shape block.
-     * @param labels button text, one per {@link Item}
+     * @param title  the heading ("PAUSED", or "MENU" when the match goes on)
+     * @param labels button text, one per {@link Item} (by its ordinal)
      */
-    public void draw(ShapeRenderer shapes, SpriteBatch batch, BitmapFont font, String[] labels, float alpha) {
+    public void draw(ShapeRenderer shapes, SpriteBatch batch, BitmapFont font, String title, String[] labels, float alpha) {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         shapes.begin(ShapeRenderer.ShapeType.Filled);
@@ -105,14 +118,15 @@ public final class PauseMenu {
         float scale = Fonts.scaleOf(font); // restored after drawing
         font.getData().setScale(2.2f);
         font.setColor(1f, 1f, 1f, alpha);
-        drawCentered(batch, font, "PAUSED", panel.x + panel.width / 2f, panel.y + panel.height - 26f);
+        drawCentered(batch, font, title, panel.x + panel.width / 2f, panel.y + panel.height - 26f);
         font.getData().setScale(1.4f);
         for (int i = 0; i < buttons.length; i++) {
             Rectangle b = buttons[i];
             if (i == selected) font.setColor(0.1f, 0.1f, 0.12f, alpha);
             else font.setColor(1f, 1f, 1f, alpha);
-            layout.setText(font, labels[i]);
-            drawCentered(batch, font, labels[i], b.x + b.width / 2f, b.y + (b.height + layout.height) / 2f);
+            String label = labels[items[i].ordinal()];
+            layout.setText(font, label);
+            drawCentered(batch, font, label, b.x + b.width / 2f, b.y + (b.height + layout.height) / 2f);
         }
         font.getData().setScale(scale);
         font.setColor(Color.WHITE);

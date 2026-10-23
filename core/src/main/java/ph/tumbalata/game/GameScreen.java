@@ -161,6 +161,9 @@ public class GameScreen implements Screen {
     private float manoFade = 0f; // 0..1, the mano widget and the blur behind it
     private PauseMenu pauseMenu;
     private TouchControlsView touchView;
+    private float hudScale = 1f; // the HUD text is bigger on a phone's small screen
+    private boolean touchWanted;  // this device plays with the on-screen controls
+    private final com.badlogic.gdx.math.Rectangle menuButton = new com.badlogic.gdx.math.Rectangle(); // top right: the match menu
     // Where the court is seen from: close up on this phone's player and the can, or the whole court (see CourtCamera)
     private final CourtCamera courtCamera = new CourtCamera(VIEW_X, VIEW_Y, VIEW_W, VIEW_H);
     private int followId = -1; // the player the camera follows, or -1 (several players share this screen: whole court)
@@ -276,9 +279,16 @@ public class GameScreen implements Screen {
         if (Gdx.files.internal("mano/hand_down.png").exists()) handDown = loadPixelTexture("mano/hand_down.png");
         touchView = new TouchControlsView();
         followId = followPlayer();
-        liveInputs.touch().setEnabled(TouchControls.wantedOn(Gdx.app.getType())); // on a phone: joystick and buttons
+        touchWanted = TouchControls.wantedOn(Gdx.app.getType());
+        liveInputs.touch().setEnabled(touchWanted); // on a phone: joystick and buttons
+        hudScale = touchWanted ? 1.5f : 1f;
+        float menuSize = 56f * hudScale;
+        menuButton.set(VIEW_X + VIEW_W - menuSize - 14f, VIEW_Y + VIEW_H - menuSize - 14f, menuSize, menuSize);
         pauseMenu = new PauseMenu();
         pauseMenu.layout(VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f);
+        if (playsWithPhones()) { // the match goes on for the others: no restart, no changing the rules
+            pauseMenu.setItems(PauseMenu.Item.RESUME, PauseMenu.Item.SOUND, PauseMenu.Item.EXIT);
+        }
         effects = new CourtEffects();
         blur = new BlurRenderer();
         for (int k = 0; k < Trash.KINDS; k++) {
@@ -481,7 +491,7 @@ public class GameScreen implements Screen {
         manoFade = stage == MatchFlow.Stage.MANO ? Math.min(1f, manoFade + delta / PAUSE_FADE_SECONDS)
             : Math.max(0f, manoFade - delta / PAUSE_FADE_SECONDS);
 
-        if (paused) {
+        if (paused && !playsWithPhones()) { // with other phones the match goes on behind the menu
             fixedStep.reset(); // paused: the whole match holds still (timer, players, signs, effects)
             for (PlayerView v : views) v.snap();
             canView.snap();
@@ -543,10 +553,12 @@ public class GameScreen implements Screen {
         if (pauseFade == 0f) signs.draw(spriteBatch, VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f + 40f); // hidden behind the pause menu
         spriteBatch.end();
         drawCanPointer();
+        drawMenuButton();
 
         if (manoFade > 0f) drawMano(manoFade);
         if (dialogueFade > 0f) dialogueBox.draw(spriteBatch, shapeRenderer, font, hints, VIEW_X, VIEW_Y, VIEW_W, dialogueFade);
-        if (pauseFade > 0f) pauseMenu.draw(shapeRenderer, spriteBatch, font, pauseLabels(), pauseFade);
+        if (pauseFade > 0f) pauseMenu.draw(shapeRenderer, spriteBatch, font, playsWithPhones() ? "MENU" : "PAUSED", pauseLabels(), pauseFade);
+        liveInputs.touch().setEnabled(touchWanted && !paused); // the menu takes the taps
         if (pauseFade == 0f) touchView.draw(liveInputs.touch(), spriteBatch, shapeRenderer); // last: over everything
     }
 
@@ -1129,12 +1141,17 @@ public class GameScreen implements Screen {
                 exiting = true;
                 audio.play(Audio.Sfx.UI_BACK);
                 audio.playBackgroundMusic(null);
-                game.changeScreen(new MainMenuScreen(game));
+                if (playsWithPhones()) { // out of the room: a phone leaves it, the host closes it (the phones are told)
+                    network.close();
+                    game.lobby().clear();
+                    game.changeScreen(new ServerScreen(game, phone ? "YOU LEFT THE MATCH" : null));
+                } else {
+                    game.changeScreen(new MainMenuScreen(game));
+                }
                 break;
         }
     }
 
-    /** Select or Start on any player's pad (R on the keyboard is Select for P1 / P2), or Esc / P. */
     /** True when other phones play in this match (this is one of them, or players from them are in it). */
     private boolean playsWithPhones() {
         if (phone) return true;
@@ -1142,8 +1159,9 @@ public class GameScreen implements Screen {
         return false;
     }
 
+    /** The menu button, Select or Start on any player's pad (R on the keyboard is Select for P1 / P2), Esc / P. */
     private boolean pausePressed() {
-        if (playsWithPhones()) return false; // a match with other phones doesn't stop for one player
+        if (menuTapped()) return true;
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) || Gdx.input.isKeyJustPressed(Input.Keys.P)) return true;
         for (int i = 0; i < match.players().size; i++) {
             PlayerInput in = liveInputs.player(i); // this frame's input (the match gets its own per step)
@@ -1152,12 +1170,20 @@ public class GameScreen implements Screen {
         return false;
     }
 
+    /** The top-right menu button was tapped or clicked this frame. */
+    private boolean menuTapped() {
+        if (!Gdx.input.justTouched()) return false;
+        mouse.set(Gdx.input.getX(), Gdx.input.getY());
+        viewport.unproject(mouse);
+        return menuButton.contains(mouse.x, mouse.y);
+    }
+
     private String[] pauseLabels() {
         pauseLabels[PauseMenu.Item.RESUME.ordinal()] = "RESUME";
         pauseLabels[PauseMenu.Item.RESTART_ROUND.ordinal()] = "RESTART ROUND";
         pauseLabels[PauseMenu.Item.SOUND.ordinal()] = "SOUND: " + (audio.isMuted() ? "OFF" : "ON");
         pauseLabels[PauseMenu.Item.STREET_EVENTS.ordinal()] = "STREET EVENTS: " + (settings.streetEvents ? "ON" : "OFF");
-        pauseLabels[PauseMenu.Item.EXIT.ordinal()] = "EXIT TO MENU";
+        pauseLabels[PauseMenu.Item.EXIT.ordinal()] = playsWithPhones() ? "LEAVE MATCH" : "EXIT TO MENU";
         return pauseLabels;
     }
 
@@ -1220,6 +1246,11 @@ public class GameScreen implements Screen {
         return count == 1 ? local : -1;
     }
 
+    /** The player this screen follows and marks YOU (a phone's own player), or -1. */
+    private int followedId() {
+        return phone ? network.myId() : followId;
+    }
+
     /** Close up on our player and the can while playing; the whole court for everything else. */
     private void aimCamera() {
         int me = phone ? network.myId() : followId; // a phone learns which player it is from the host
@@ -1229,6 +1260,23 @@ public class GameScreen implements Screen {
         } else {
             courtCamera.wide();
         }
+    }
+
+    /** The menu button in the top-right corner: a dark circle with the two pause bars. HUD layer. */
+    private void drawMenuButton() {
+        if (paused || flow.stage() == MatchFlow.Stage.OUTRO || flow.stage() == MatchFlow.Stage.DONE) return;
+        float cx = menuButton.x + menuButton.width / 2f, cy = menuButton.y + menuButton.height / 2f, r = menuButton.width / 2f;
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0f, 0f, 0f, 0.55f);
+        shapeRenderer.circle(cx, cy, r, 28);
+        shapeRenderer.setColor(1f, 1f, 1f, 0.9f);
+        float barW = r * 0.22f, barH = r * 0.9f, gap = r * 0.18f;
+        shapeRenderer.rect(cx - gap - barW, cy - barH / 2f, barW, barH);
+        shapeRenderer.rect(cx + gap, cy - barH / 2f, barW, barH);
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
     /** When the can is off-screen: a gold arrow at the edge of the screen pointing to it, with a little can. */
@@ -1283,6 +1331,13 @@ public class GameScreen implements Screen {
         Player taya = match.taya();
         font.getData().setScale(1f);
         for (Player p : match.players()) {
+            if (p.id == followedId()) { // YOU: which kid this phone plays, bobbing over the name
+                float bob = MathUtils.sin(clock * 5f) * 3f;
+                font.getData().setScale(1.2f);
+                Fonts.drawStroked(spriteBatch, font, "YOU", views[p.id].drawPos.x - 50f, views[p.id].drawPos.y + NAME_TAG_Y + 20f + bob, 100f,
+                    Align.center, Color.GOLD, new Color(0f, 0f, 0f, 0.9f), 2f);
+                font.getData().setScale(1f);
+            }
             String text = (p == taya && !flow.beforeTaya()) ? p.label() + " TAYA" : p.label();
             Color c = p.color();
             float a = (p != taya && p.hasThrown) ? 0.7f : 1f;
@@ -1412,17 +1467,19 @@ public class GameScreen implements Screen {
         float timerLeft = match.timeLeft();
         int totalSeconds = MathUtils.ceil(timerLeft);
         String timerText = (totalSeconds / 60) + ":" + String.format("%02d", totalSeconds % 60);
-        font.getData().setScale(2.2f);
+        font.getData().setScale(2.2f * hudScale);
         font.setColor(timerLeft <= 10f ? Color.SCARLET : Color.WHITE);
-        font.draw(spriteBatch, timerText, VIEW_X + VIEW_W / 2f - 100f, VIEW_Y + VIEW_H - 14f, 200f, Align.center, false);
-        font.getData().setScale(1.2f);
+        font.draw(spriteBatch, timerText, VIEW_X + VIEW_W / 2f - 150f, VIEW_Y + VIEW_H - 14f, 300f, Align.center, false);
+        font.getData().setScale(1.2f * hudScale);
         font.setColor(Color.WHITE);
 
         if (!flow.beforeTaya()) {
-            font.draw(spriteBatch, statusText(), VIEW_X + VIEW_W / 2f - 300f, VIEW_Y + VIEW_H - 54f, 600f, Align.center, false);
+            float statusY = VIEW_Y + VIEW_H - 14f - 40f * hudScale;
+            Fonts.drawStroked(spriteBatch, font, statusText(), VIEW_X + VIEW_W / 2f - 400f, statusY, 800f, Align.center,
+                Color.WHITE, new Color(0f, 0f, 0f, 0.85f), 1.5f);
         }
 
-        font.getData().setScale(1.5f);
+        font.getData().setScale(1.5f * hudScale);
         float y = VIEW_Y + VIEW_H - 16f;
         for (Player p : match.players()) {
             String role = (p == match.taya() && !flow.beforeTaya()) ? " (Taya)" : ""; // no Taya until the mano picks one
@@ -1431,7 +1488,7 @@ public class GameScreen implements Screen {
             font.draw(spriteBatch, line, VIEW_X + 22f, y - 2f);
             font.setColor(p.color());
             font.draw(spriteBatch, line, VIEW_X + 20f, y);
-            y -= 26f;
+            y -= 26f * hudScale;
         }
         font.getData().setScale(1.2f);
         font.setColor(Color.WHITE);

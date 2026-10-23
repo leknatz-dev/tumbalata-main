@@ -489,6 +489,10 @@ The goal is a phone game (Android first, iPhone later) played over the network: 
 
 Then: the waiting room (done), the server screen with LAN host / join and a waiting room in sync on every phone (done), the character select and the match over the Wi-Fi (done), then the Android build with touch controls, then private room codes.
 
+**Phone polish (done):** the player each phone controls has a bobbing gold YOU over their name tag. With touch controls the HUD text is 1.5x bigger (timer, status line, player list). A round menu button in the top-right corner opens the in-match menu (also Esc / P / the Android BACK key). In a Wi-Fi match it is titled MENU, holds only RESUME, SOUND and LEAVE MATCH, and the match keeps running for everyone else behind it; leaving goes back to the server screen (the host leaving closes the room). The Android app icon is the can with a flying slipper on the yellow `#E9B23A`, as an adaptive icon (`android/res/mipmap-*`).
+
+**Next: the 16 x 16 makeover.** One palette and a 16 x 16 tile grid for the court, the characters, the menus and the HUD, in the style of Nefarius: The Last Wizard.
+
 ## Earlier roadmap (desktop, controllers)
 
 Work in this order: unblock and verify first, then finish the 2-player match, then build 3 to 4 players, then content and polish. No dates are set yet.
