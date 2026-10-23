@@ -161,6 +161,9 @@ public class GameScreen implements Screen {
     private float manoFade = 0f; // 0..1, the mano widget and the blur behind it
     private PauseMenu pauseMenu;
     private TouchControlsView touchView;
+    // Where the court is seen from: close up on this phone's player and the can, or the whole court (see CourtCamera)
+    private final CourtCamera courtCamera = new CourtCamera(VIEW_X, VIEW_Y, VIEW_W, VIEW_H);
+    private int followId = -1; // the player the camera follows, or -1 (several players share this screen: whole court)
     private boolean paused = false;
     private boolean pauseJustOpened = false; // the button that opened it must not also press a menu button
     private boolean exiting = false;
@@ -272,6 +275,7 @@ public class GameScreen implements Screen {
         if (Gdx.files.internal("mano/hand_up.png").exists()) handUp = loadPixelTexture("mano/hand_up.png");
         if (Gdx.files.internal("mano/hand_down.png").exists()) handDown = loadPixelTexture("mano/hand_down.png");
         touchView = new TouchControlsView();
+        followId = followPlayer();
         liveInputs.touch().setEnabled(TouchControls.wantedOn(Gdx.app.getType())); // on a phone: joystick and buttons
         pauseMenu = new PauseMenu();
         pauseMenu.layout(VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f);
@@ -507,6 +511,8 @@ public class GameScreen implements Screen {
             float alpha = phone ? Math.min(1f, sinceState / FixedStep.STEP) : fixedStep.alpha();
             for (PlayerView v : views) v.follow(alpha);
             canView.follow(alpha);
+            aimCamera();
+            courtCamera.update(delta);
         }
 
         ScreenUtils.clear(0f, 0f, 0f, 1f);
@@ -515,29 +521,28 @@ public class GameScreen implements Screen {
         boolean offscreen = blur.beginScene();
         if (offscreen) ScreenUtils.clear(0f, 0f, 0f, 1f);
         viewport.apply();
-        camera.position.set(VIEW_X + VIEW_W / 2f + effects.shakeX(), VIEW_Y + VIEW_H / 2f + effects.shakeY(), 0);
-        camera.update();
+        useCourtCamera(true);
         drawCourt();
-        camera.position.set(VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f, 0);
-        camera.update();
+        useHudCamera();
         if (offscreen) blur.endScene(Math.max(Math.max(signs.blurAmount(), pauseFade), Math.max(manoFade, dialogueFade)),
             SIGN_BLUR_RADIUS);
 
-        // 2. HUD, sign and aim meter on top: steady and sharp
+        // 2. On the court but sharp over the blur: the can countdown and the aim arrow (they move with the camera)
         viewport.apply();
-        shapeRenderer.setProjectionMatrix(camera.combined);
-        spriteBatch.setProjectionMatrix(camera.combined);
+        useCourtCamera(false);
+        spriteBatch.begin();
+        drawCanCountdown();
+        spriteBatch.end();
+        renderAimOverlay();
+        if (debugCollision) renderDebugCollision();
+
+        // 3. HUD and signs on top: fixed, steady and sharp
+        useHudCamera();
         spriteBatch.begin();
         drawHud();
-        drawCanCountdown();
         if (pauseFade == 0f) signs.draw(spriteBatch, VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f + 40f); // hidden behind the pause menu
         spriteBatch.end();
-
-        renderAimOverlay();
-
-        if (debugCollision) {
-            renderDebugCollision();
-        }
+        drawCanPointer();
 
         if (manoFade > 0f) drawMano(manoFade);
         if (dialogueFade > 0f) dialogueBox.draw(spriteBatch, shapeRenderer, font, hints, VIEW_X, VIEW_Y, VIEW_W, dialogueFade);
@@ -1178,6 +1183,83 @@ public class GameScreen implements Screen {
     }
 
     /** Time is up and the "GOOD JOB!" sign has played: on to the victory screen. */
+    /** The court, seen through the match camera ({@code shake}: with the screen shake). */
+    private void useCourtCamera(boolean shake) {
+        camera.position.set(courtCamera.x + (shake ? effects.shakeX() : 0f), courtCamera.y + (shake ? effects.shakeY() : 0f), 0);
+        camera.zoom = courtCamera.zoom;
+        camera.update();
+        spriteBatch.setProjectionMatrix(camera.combined);
+        shapeRenderer.setProjectionMatrix(camera.combined);
+    }
+
+    /** The fixed whole-screen layer: the HUD, signs, mano, dialogue, pause menu. */
+    private void useHudCamera() {
+        camera.position.set(VIEW_X + VIEW_W / 2f, VIEW_Y + VIEW_H / 2f, 0);
+        camera.zoom = 1f;
+        camera.update();
+        spriteBatch.setProjectionMatrix(camera.combined);
+        shapeRenderer.setProjectionMatrix(camera.combined);
+    }
+
+    /**
+     * The player this screen's camera follows: a phone's own player, or the one player on this device when the
+     * others are on phones. -1 (the whole court) when several players share this screen.
+     * {@code -Dtumbalata.followPlayer=0} tries it on a computer.
+     */
+    private int followPlayer() {
+        if (phone) return network.myId();
+        Integer forced = Integer.getInteger("tumbalata.followPlayer");
+        if (forced != null) return forced < characters.length ? forced : -1;
+        int local = -1, count = 0;
+        for (int i = 0; i < connections.length; i++) {
+            if (connections[i] < 0) {
+                count++;
+                local = i;
+            }
+        }
+        return count == 1 ? local : -1;
+    }
+
+    /** Close up on our player and the can while playing; the whole court for everything else. */
+    private void aimCamera() {
+        int me = phone ? network.myId() : followId; // a phone learns which player it is from the host
+        if (me >= 0 && me < views.length && flow.stage() == MatchFlow.Stage.PLAYING) {
+            courtCamera.follow(views[me].drawPos.x, views[me].drawPos.y, canView.drawPos.x, canView.drawPos.y + canView.drawZ);
+        } else {
+            courtCamera.wide();
+        }
+    }
+
+    /** When the can is off-screen: a gold arrow at the edge of the screen pointing to it, with a little can. */
+    private void drawCanPointer() {
+        if (flow.stage() != MatchFlow.Stage.PLAYING || courtCamera.zoom > 0.99f) return;
+        float cx = canView.drawPos.x, cy = canView.drawPos.y;
+        if (courtCamera.sees(cx, cy, 24f)) return;
+        float midX = VIEW_X + VIEW_W / 2f, midY = VIEW_Y + VIEW_H / 2f;
+        float dx = courtCamera.toScreenX(cx) - midX, dy = courtCamera.toScreenY(cy) - midY;
+        float inset = 60f, fit = Math.min((VIEW_W / 2f - inset) / Math.max(1f, Math.abs(dx)), (VIEW_H / 2f - inset) / Math.max(1f, Math.abs(dy)));
+        float ex = midX + dx * fit, ey = midY + dy * fit;
+        float len = (float) Math.sqrt(dx * dx + dy * dy), ux = dx / len, uy = dy / len;
+        float bob = MathUtils.sin(clock * 6f) * 4f;
+        ex += ux * bob;
+        ey += uy * bob;
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0f, 0f, 0f, 0.6f);
+        shapeRenderer.circle(ex, ey, 26f, 24);
+        float tipX = ex + ux * 40f, tipY = ey + uy * 40f; // the arrow head, outside the circle
+        float baseX = ex + ux * 24f, baseY = ey + uy * 24f;
+        shapeRenderer.setColor(Color.GOLD);
+        shapeRenderer.triangle(tipX, tipY, baseX - uy * 14f, baseY + ux * 14f, baseX + uy * 14f, baseY - ux * 14f);
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+        spriteBatch.begin();
+        TextureRegion can = canView.frame();
+        spriteBatch.draw(can, ex - 8f, ey - 12f, 16f, 24f);
+        spriteBatch.end();
+    }
+
     private void endMatch() {
         if (phone) return; // the host sends everyone to the podium, with the scores
         if (Gdx.app.getApplicationListener() instanceof TumbalataGame) {
