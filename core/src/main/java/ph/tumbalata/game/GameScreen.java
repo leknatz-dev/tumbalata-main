@@ -71,7 +71,7 @@ public class GameScreen implements Screen {
     private static final float SIGN_BLUR_RADIUS = 9f;      // px of blur behind a pop-up sign (0 = off)
 
     // --- THE CAN WHILE TAYA CARRIES IT (drawing only) ---
-    private static final float CARRIED_CAN_Y = -10f;       // can centre relative to Taya's centre: at hand height
+    private static final float CARRIED_CAN_Y = 12f;        // can centre relative to Taya's centre: lifted up to the head
     private static final float CARRIED_CAN_SCALE = 0.6f;   // smaller than on the ground, so Taya's head still shows
 
     // --- TRASH PLACEHOLDERS (art: assets/trash/<Trash.KIND_FILES>.png) ---
